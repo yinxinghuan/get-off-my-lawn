@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -123,13 +123,13 @@ interface Enemy {
   hpBar: THREE.Sprite | null;
 }
 interface Tower {
-  g: THREE.Group; head: THREE.Object3D; ring: THREE.Mesh;
-  x: number; z: number; level: number;
-  range: number; dmg: number; rate: number; cd: number; yaw: number;
+  g: THREE.Group; head: THREE.Object3D; ring: THREE.Mesh; pips: THREE.Sprite;
+  type: number; color: number; x: number; z: number; level: number;
+  range: number; dmg: number; rate: number; slow: number; splash: number; cd: number; yaw: number;
   light?: THREE.PointLight; flicker: number;
 }
 interface Plot { x: number; z: number; disc: THREE.Mesh; marker: THREE.Group; ring: THREE.Mesh; ghost: THREE.Group; tower: Tower | null; }
-interface Proj { g: THREE.Mesh; x: number; y: number; z: number; tx: number; ty: number; tz: number; target: Enemy; dmg: number; }
+interface Proj { g: THREE.Mesh; x: number; y: number; z: number; tx: number; ty: number; tz: number; target: Enemy; dmg: number; slow: number; splash: number; color: number; }
 
 export interface HudState { lives: number; cash: number; score: number; wave: number; towers: number; }
 export interface SceneHandle { restart: () => void; }
@@ -137,6 +137,7 @@ export interface SceneHandle { restart: () => void; }
 type Mode = 'attract' | 'play' | 'over';
 interface Props {
   mode: Mode;
+  selectedType: number;
   onHud: (h: HudState) => void;
   onWave: (w: number) => void;
   onGameOver: (score: number) => void;
@@ -199,7 +200,7 @@ function drawHpBar(s: THREE.Sprite, frac: number) {
 }
 
 // ─── The game world + loop ──────────────────────────────────────────────────
-function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
+function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart }: Props) {
   const { scene, camera, gl } = useThree();
   const root = useMemo(() => new THREE.Group(), []);
   const fx = useMemo(() => new THREE.Group(), []);
@@ -220,16 +221,24 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
     onHud: onHud as (h: HudState) => void,
     motes: null as THREE.Points | null,
     mist: null as THREE.Group | null,
+    selectedType: 0,
   });
+  S.current.selectedType = selectedType; // keep the chosen weapon in sync each render
 
-  // camera setup — orthographic iso diorama (premium clean-iso look)
-  useEffect(() => {
+  // orbital camera — drag to rotate the board around its centre (azimuth only).
+  const CC = useMemo(() => new THREE.Vector3(0, 0, -1.2), []);  // board centre
+  const CAM_R = 16.8, CAM_H = 12, CAM_ZOOM = 58;
+  const BASE_AZ = Math.atan2(9, 14.2);
+  const azimuthRef = useRef(BASE_AZ);
+  const applyCam = useCallback(() => {
     const cam = camera as THREE.OrthographicCamera;
-    cam.position.set(9.0, 12.0, 13.0);
-    cam.zoom = 58; cam.near = 0.1; cam.far = 200;   // pulled back so the whole winding path + plots read
-    cam.lookAt(0, 0.2, -1.4);
+    const az = azimuthRef.current;
+    cam.position.set(CC.x + CAM_R * Math.sin(az), CAM_H, CC.z + CAM_R * Math.cos(az));
+    cam.zoom = CAM_ZOOM; cam.near = 0.1; cam.far = 200;
+    cam.lookAt(CC.x, 0.2, CC.z);
     cam.updateProjectionMatrix();
-  }, [camera]);
+  }, [camera, CC]);
+  useEffect(() => { applyCam(); }, [applyCam]);
 
   // build the static board once
   useEffect(() => {
@@ -251,7 +260,9 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
     const el = gl.domElement;
     const ray = new THREE.Raycaster();
     const v = new THREE.Vector2();
-    function onDown(e: PointerEvent) {
+    let pd: { x: number; y: number; moved: boolean } | null = null;
+    // a clean tap (no drag) places/upgrades a tower; a drag rotates the board
+    function tap(e: PointerEvent) {
       const st = S.current;
       if (st.over || mode !== 'play') return;
       const r = el.getBoundingClientRect();
@@ -264,9 +275,11 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
       const plot = st.plots.find((p) => p.disc === hits[0].object);
       if (!plot) return;
       if (!plot.tower) {
-        if (st.cash >= TOWER_COST) {
-          st.cash -= TOWER_COST;
-          plot.tower = plantTower(root, plot);
+        const ti = st.selectedType;
+        const cost = TOWER_TYPES[ti].cost;
+        if (st.cash >= cost) {
+          st.cash -= cost;
+          plot.tower = plantTower(root, plot, ti);
           st.towers.push(plot.tower);
           plot.marker.visible = false;
           sfx.plant();
@@ -282,10 +295,25 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
         } else { bounce(tw.g); }
       }
     }
+    function onDown(e: PointerEvent) { pd = { x: e.clientX, y: e.clientY, moved: false }; }
+    function onMove(e: PointerEvent) {
+      if (!pd) return;
+      const dx = e.clientX - pd.x, dy = e.clientY - pd.y;
+      if (!pd.moved && Math.hypot(dx, dy) > 8) pd.moved = true;
+      if (pd.moved) { azimuthRef.current -= dx * 0.006; pd.x = e.clientX; pd.y = e.clientY; applyCam(); }
+    }
+    function onUp(e: PointerEvent) { if (pd && !pd.moved) tap(e); pd = null; }
     el.addEventListener('pointerdown', onDown);
-    return () => el.removeEventListener('pointerdown', onDown);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', () => { pd = null; });
+    return () => {
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, camera, gl]);
+  }, [mode, camera, gl, applyCam]);
 
   // restart wiring
   useEffect(() => {
@@ -300,14 +328,14 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
     resetGame(root, fx, st, onHud);
     // debug: after the reset, pre-plant towers + scatter intruders for a combat shot
     if (typeof location !== 'undefined' && location.search.includes('debug')) {
-      for (const idx of [2, 3, 1]) {
+      [[2, 0], [3, 2], [1, 1], [6, 0]].forEach(([idx, ty]) => {
         const plot = st.plots[idx];
         if (plot && !plot.tower) {
-          plot.tower = plantTower(root, plot);
+          plot.tower = plantTower(root, plot, ty);
           if (idx === 3) { upgradeTower(plot.tower); upgradeTower(plot.tower); }
           st.towers.push(plot.tower); plot.marker.visible = false;
         }
-      }
+      });
       startWave(st, onWave);
       const dbgPool = poolForWave(3);
       [0.12, 0.3, 0.48, 0.66, 0.84].forEach((frac, i) => {
@@ -338,7 +366,7 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
     // dim when you can't yet pay — so "when you can build" reads at a glance
     for (const p of st.plots) {
       if (p.tower) { p.marker.visible = false; continue; }
-      const aff = st.cash >= TOWER_COST;
+      const aff = st.cash >= TOWER_TYPES[st.selectedType].cost;
       p.marker.visible = true;
       const rm = p.ring.material as THREE.MeshBasicMaterial;
       if (aff) {
@@ -468,12 +496,16 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
       const step = 16 * dt;
       if (d <= step || en.dead) {
         // impact
-        if (!en.dead) {
-          en.hp -= pr.dmg; en.slow = Math.max(en.slow, 0.5);
+        if (pr.splash > 0) {
+          // mortar: area blast at the impact point (hits everyone nearby)
+          splashHit(st, root, pr.x, pr.z, pr.splash, pr.dmg, pr.slow);
+          ringPulse(fx, pr.x, pr.z, pr.color);
+        } else if (!en.dead) {
+          en.hp -= pr.dmg; en.slow = Math.max(en.slow, pr.slow);
           if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
-          splash(fx, pr.x, 0.4, pr.z);
           if (en.hp <= 0) killEnemy(st, en, root);
         }
+        splash(fx, pr.x, 0.4, pr.z, pr.color);
         pr.x = 1e9; // mark for removal
       } else {
         pr.x += (dx / d) * step; pr.y += (dy / d) * step; pr.z += (dz / d) * step;
@@ -514,36 +546,25 @@ function buildBoard(root: THREE.Group, st: any) {
     flatify(moss, { cast: false, receive: true }); root.add(moss);
   }
 
-  // winding cobbled grave-path — a lit dirt band per segment + bend-fills, with
-  // pale stone edging so the route reads clearly against the dark ground
+  // paved flagstone path — laid as actual tiles so it clearly reads as the route
+  // (dark grout base band + alternating pale flagstones; no glow lines)
   for (const s of PATH_SEGS) {
     const midx = s.ax + s.dx * s.len / 2, midz = s.az + s.dz * s.len / 2;
-    const band = box(1.78, 0.16, s.len + 0.6, 0x564a3a, midx, 0.06, midz);
-    band.rotation.y = Math.atan2(s.dx, s.dz);
-    flatify(band, { cast: false, receive: true }); root.add(band);
+    const grout = box(1.7, 0.1, s.len + 0.5, 0x2b2f27, midx, 0.05, midz);
+    grout.rotation.y = Math.atan2(s.dx, s.dz);
+    flatify(grout, { cast: false, receive: true }); root.add(grout);
   }
-  for (let i = 1; i < PATH.length - 1; i++) {        // fill the bend joints
-    const fill = box(1.82, 0.16, 1.82, 0x564a3a, PATH[i][0], 0.058, PATH[i][1]);
+  for (let i = 1; i < PATH.length - 1; i++) {        // grout base at the U-turns
+    const fill = box(1.7, 0.1, 1.7, 0x2b2f27, PATH[i][0], 0.048, PATH[i][1]);
     flatify(fill, { cast: false, receive: true }); root.add(fill);
   }
-  for (let d = 0.3; d < PATH_TOTAL; d += 0.5) {       // cobbles + glowing kerb edging
+  let ti = 0;
+  for (let d = 0; d <= PATH_TOTAL + 0.01; d += 1.34, ti++) {
     const p = posAlong(d);
-    const off = ((d * 1.7) % 1.0) - 0.5;
-    const cx = p.x + p.px * off, cz = p.z + p.pz * off;
-    const stone = box(0.42, 0.06, 0.36, (d | 0) % 2 ? 0x7a7d6a : 0x888b77, cx, 0.16, cz);
-    stone.rotation.y = Math.atan2(p.dx, p.dz);
-    flatify(stone, { cast: false, receive: true }); root.add(stone);
-    // pale kerb stones on both edges, with a faint spectral glow cap → the winding
-    // route is outlined by a soft green line that reads clearly in the dark
-    for (const side of [-1, 1]) {
-      const ex = p.x + p.px * side * 0.94, ez = p.z + p.pz * side * 0.94;
-      const kerb = box(0.2, 0.16, 0.34, 0x868b76, ex, 0.1, ez);
-      kerb.rotation.y = Math.atan2(p.dx, p.dz);
-      flatify(kerb, { cast: false, receive: true }); root.add(kerb);
-      const glow = box(0.12, 0.04, 0.34, 0x6fe0a8, ex, 0.2, ez, { e: 0x4fc88c, ei: 0.7 });
-      glow.rotation.y = Math.atan2(p.dx, p.dz); glow.castShadow = false; glow.receiveShadow = false;
-      root.add(glow);
-    }
+    const c = ti % 2 ? 0x9b9d85 : 0x7f8170;          // alternating flagstone shades
+    const tile = box(1.5, 0.14, 1.18, c, p.x, 0.11, p.z);
+    tile.rotation.y = Math.atan2(p.dx, p.dz);
+    flatify(tile, { cast: false, receive: true }); root.add(tile);
   }
 
   // dead-grass tufts beside the path
@@ -734,48 +755,93 @@ function makePlot(x: number, z: number): Plot {
 }
 
 // ─── towers ─────────────────────────────────────────────────────────────────
-// spectral flame colours by level — eerie green → teal → cyan → violet
-const LVL_COLOR = [0x52b46e, 0x44c9aa, 0x63d2e6, 0xb583ec, 0xffa85c];
-function plantTower(root: THREE.Group, plot: Plot): Tower {
+// ── Weapon types — three clear roles (the build tray shows these) ────────────
+export interface TowerType {
+  id: string; name: string; cost: number; color: number;
+  range: number; dmg: number; rate: number; slow: number; splash: number;
+  head: 'flame' | 'crystal' | 'mortar';
+  blurb: string;
+}
+export const TOWER_TYPES: TowerType[] = [
+  { id: 'brazier', name: 'Brazier', cost: 80, color: 0x6fe0a0, range: 2.8, dmg: 9, rate: 1.8, slow: 0.4, splash: 0, head: 'flame', blurb: 'Steady spectral fire' },
+  { id: 'frost', name: 'Frost Lamp', cost: 110, color: 0x6fd6ec, range: 2.7, dmg: 4, rate: 1.5, slow: 1.9, splash: 0, head: 'crystal', blurb: 'Chills — slows the dead' },
+  { id: 'mortar', name: 'Bone Mortar', cost: 160, color: 0xc79bf0, range: 3.1, dmg: 16, rate: 0.75, slow: 0.3, splash: 1.3, head: 'mortar', blurb: 'Heavy splash blast' },
+];
+
+function plantTower(root: THREE.Group, plot: Plot, typeIdx: number): Tower {
+  const T = TOWER_TYPES[typeIdx];
   const g = new THREE.Group();
   g.position.set(plot.x, 0, plot.z);
-  // a grave brazier on a dark stone plinth
   const base = cyl(0.44, 0.52, 0.22, 8, 0x474b46, 0, 0.11, 0); flatify(base); g.add(base);
   const post = cyl(0.11, 0.13, 0.58, 8, 0x2a2c29, 0, 0.5, 0); flatify(post); g.add(post);
   const bowl = cyl(0.3, 0.18, 0.22, 10, 0x33352f, 0, 0.84, 0); flatify(bowl); g.add(bowl);
-  // head holds the spectral flame (head.children[0] = flame, recoloured on upgrade)
+  // head varies by type so each weapon reads distinctly
   const head = new THREE.Group(); head.position.y = 0.98;
-  const flame = ball(0.24, LVL_COLOR[0], 0, 0, 0, 1);
-  (flame.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(LVL_COLOR[0]);
-  (flame.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.4;
-  flame.castShadow = false; head.add(flame);
+  let emitter: THREE.Mesh;
+  if (T.head === 'crystal') {
+    emitter = ball(0.22, T.color, 0, 0.02, 0, 0);          // angular crystal
+  } else if (T.head === 'mortar') {
+    const tube = cyl(0.2, 0.26, 0.34, 10, 0x2a2c29, 0, 0.04, 0); tube.rotation.x = -0.35; flatify(tube); head.add(tube);
+    emitter = ball(0.15, T.color, 0, 0.12, 0.05, 1);        // glowing ember in the muzzle
+  } else {
+    emitter = ball(0.24, T.color, 0, 0, 0, 1);              // smooth flame
+  }
+  const em = emitter.material as THREE.MeshStandardMaterial;
+  em.emissive = new THREE.Color(T.color); em.emissiveIntensity = 1.4; emitter.castShadow = false;
+  head.add(emitter);
   g.add(head);
-  // flickering point light → warm pool on the surrounding graves (the "texture")
-  const light = new THREE.PointLight(LVL_COLOR[0], 6, 3.4, 2);
+  const light = new THREE.PointLight(T.color, 6, 3.4, 2);
   light.position.set(0, 1.0, 0); light.castShadow = false; g.add(light);
-  // range ring (faint spectral)
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.1, 0.1, 28),
-    new THREE.MeshBasicMaterial({ color: 0x52b46e, transparent: true, opacity: 0.14, side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({ color: T.color, transparent: true, opacity: 0.14, side: THREE.DoubleSide }),
   );
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; g.add(ring);
+  // level pips above the tower so "level" is always visible
+  const pips = makePips();
+  pips.position.set(0, 1.45, 0); g.add(pips);
   root.add(g);
-  const tw: Tower = { g, head, ring, x: plot.x, z: plot.z, level: 1, range: 2.8, dmg: 9, rate: 1.6, cd: 0, yaw: 0, light, flicker: Math.random() * 6 };
+  const tw: Tower = {
+    g, head, ring, pips, type: typeIdx, x: plot.x, z: plot.z, level: 1,
+    range: T.range, dmg: T.dmg, rate: T.rate, slow: T.slow, splash: T.splash,
+    color: T.color, cd: 0, yaw: 0, light, flicker: Math.random() * 6,
+  };
   applyTowerLevel(tw);
   return tw;
 }
+// three little pips that fill in as the tower levels up
+function makePips(): THREE.Sprite {
+  const cv = document.createElement('canvas'); cv.width = 96; cv.height = 24;
+  const tex = new THREE.CanvasTexture(cv);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  s.scale.set(0.7, 0.18, 1);
+  (s as any).__cv = cv; (s as any).__tex = tex;
+  return s;
+}
+function drawPips(s: THREE.Sprite, level: number, color: number) {
+  const cv = (s as any).__cv as HTMLCanvasElement; const ctx = cv.getContext('2d')!;
+  ctx.clearRect(0, 0, 96, 24);
+  const hex = '#' + color.toString(16).padStart(6, '0');
+  const max = TOWER_MAX_LVL;
+  for (let i = 0; i < max; i++) {
+    const cx = 12 + i * (72 / (max - 1 || 1));
+    ctx.beginPath(); ctx.arc(cx, 12, 7, 0, Math.PI * 2);
+    ctx.fillStyle = i < level ? hex : 'rgba(255,255,255,0.18)'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.stroke();
+  }
+  (s as any).__tex.needsUpdate = true;
+}
 function applyTowerLevel(tw: Tower) {
-  tw.range = 2.5 + tw.level * 0.45;
-  tw.dmg = 6 + tw.level * 5;
-  tw.rate = 1.3 + tw.level * 0.35;
-  const col = LVL_COLOR[Math.min(tw.level, LVL_COLOR.length - 1)];
-  const flame = tw.head.children[0] as THREE.Mesh;
-  const fm = flame.material as THREE.MeshStandardMaterial;
-  fm.color.setHex(col); fm.emissive.setHex(col);
-  flame.scale.setScalar(1 + (tw.level - 1) * 0.2);
-  if (tw.light) { tw.light.color.setHex(col); tw.light.intensity = 5 + tw.level * 1.6; tw.light.distance = 3 + tw.level * 0.4; }
+  const T = TOWER_TYPES[tw.type];
+  tw.range = T.range + (tw.level - 1) * 0.3;
+  tw.dmg = Math.round(T.dmg * (1 + (tw.level - 1) * 0.55));
+  tw.rate = T.rate * (1 + (tw.level - 1) * 0.18);
+  const emitter = tw.head.children[tw.head.children.length - 1] as THREE.Mesh;
+  emitter.scale.setScalar(1 + (tw.level - 1) * 0.18);
+  if (tw.light) { tw.light.intensity = 5 + tw.level * 1.6; tw.light.distance = 3 + tw.level * 0.4; }
   tw.ring.geometry.dispose();
   tw.ring.geometry = new THREE.RingGeometry(tw.range - 0.06, tw.range, 40);
+  drawPips(tw.pips, tw.level, tw.color);
 }
 function upgradeTower(tw: Tower) {
   tw.level = Math.min(TOWER_MAX_LVL, tw.level + 1);
@@ -816,22 +882,34 @@ function killEnemy(st: any, en: Enemy, _root: THREE.Group) {
 
 // ─── projectiles + fx ───────────────────────────────────────────────────────
 function fireWater(fx: THREE.Group, st: any, tw: Tower, target: Enemy) {
-  const col = LVL_COLOR[Math.min(tw.level, LVL_COLOR.length - 1)];
-  const g = ball(0.14, col, 0, 0, 0, 1);
+  const col = tw.color;
+  const g = ball(tw.splash > 0 ? 0.2 : 0.14, col, 0, 0, 0, 1);
   const gm = g.material as THREE.MeshStandardMaterial;
   gm.emissive = new THREE.Color(col); gm.emissiveIntensity = 1.6;
   g.castShadow = false;
   g.position.set(tw.x, 1.0, tw.z);
   fx.add(g);
-  st.projs.push({ g, x: tw.x, y: 1.0, z: tw.z, tx: target.x, ty: 0.5, tz: target.z, target, dmg: tw.dmg });
+  st.projs.push({ g, x: tw.x, y: 1.0, z: tw.z, tx: target.x, ty: 0.5, tz: target.z, target, dmg: tw.dmg, slow: tw.slow, splash: tw.splash, color: col });
 }
 
 interface Particle { m: THREE.Mesh; vx: number; vy: number; vz: number; life: number; }
 const PARTICLES: Particle[] = [];
-function splash(fx: THREE.Group, x: number, y: number, z: number) {
+// area blast — damage + slow every live enemy within radius of the impact
+function splashHit(st: any, root: THREE.Group, x: number, z: number, radius: number, dmg: number, slow: number) {
+  for (const en of st.enemies) {
+    if (en.dead) continue;
+    const dx = en.x - x, dz = en.z - z;
+    if (dx * dx + dz * dz <= radius * radius) {
+      en.hp -= dmg; en.slow = Math.max(en.slow, slow);
+      if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
+      if (en.hp <= 0) killEnemy(st, en, root);
+    }
+  }
+}
+function splash(fx: THREE.Group, x: number, y: number, z: number, color = 0x8fe6b8) {
   for (let i = 0; i < 6; i++) {
-    const m = ball(0.06, 0x8fe6b8, x, y, z);
-    (m.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(0x4fae7a);
+    const m = ball(0.06, color, x, y, z);
+    (m.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(color);
     m.castShadow = false;
     fx.add(m);
     PARTICLES.push({
@@ -851,10 +929,10 @@ function renderFx(fx: THREE.Group, dt: number) {
     }
   }
 }
-function ringPulse(fx: THREE.Group, x: number, z: number) {
+function ringPulse(fx: THREE.Group, x: number, z: number, color = 0xffd23f) {
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.2, 0.34, 24),
-    new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
   );
   ring.rotation.x = -Math.PI / 2; ring.position.set(x, 0.1, z);
   fx.add(ring);

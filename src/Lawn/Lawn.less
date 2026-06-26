@@ -53,6 +53,75 @@
     font-size: 19px;
     color: @gold;
     font-variant-numeric: tabular-nums;
+    transition: box-shadow 0.25s ease;
+    &--ready { box-shadow: 0 0 0 1px @spectral, 0 0 16px rgba(127, 230, 180, 0.5); }
+  }
+
+  // ── build tray — the weapons, their cost, and which is selected ──
+  &-tray {
+    position: absolute;
+    bottom: calc(env(safe-area-inset-bottom) + 12px);
+    left: 10px;
+    right: 64px;
+    z-index: 8;
+    display: flex;
+    gap: 8px;
+  }
+  &-card {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 4px 7px;
+    border-radius: 16px;
+    background: @glass;
+    -webkit-backdrop-filter: @blur;
+    backdrop-filter: @blur;
+    border: 1px solid @glass-border;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.12s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    &-ico { display: flex; }
+    &-name { font-size: 11px; font-weight: 700; color: @ink; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    &-cost { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 800; color: @gold; font-variant-numeric: tabular-nums; }
+    &--sel {
+      border-color: @spectral;
+      box-shadow: 0 0 0 1px @spectral, 0 8px 22px rgba(0, 0, 0, 0.5), inset 0 0 14px rgba(127, 230, 180, 0.16);
+      transform: translateY(-3px);
+    }
+    &--poor { opacity: 0.5; }
+    &--poor .gol-card-cost { color: @red; }
+  }
+
+  // ── how-to steps on the attract screen ──
+  &-how {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 4px 0 6px;
+  }
+  &-how-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    color: @ink;
+    text-align: left;
+  }
+  &-how-ico {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(127, 230, 180, 0.12);
+    border: 1px solid @glass-border;
   }
 
   &-meta {
@@ -85,7 +154,7 @@
   // build guide — finger tap + clear when/how copy, persists until first build
   &-guide {
     position: absolute;
-    bottom: calc(env(safe-area-inset-bottom) + 30px);
+    bottom: calc(env(safe-area-inset-bottom) + 96px);
     left: 50%;
     transform: translateX(-50%);
     z-index: 7;
@@ -121,7 +190,7 @@
 
   &-hint {
     position: absolute;
-    bottom: calc(env(safe-area-inset-bottom) + 30px);
+    bottom: calc(env(safe-area-inset-bottom) + 96px);
     left: 50%;
     transform: translateX(-50%);
     padding: 9px 18px;
@@ -192,9 +261,7 @@
     gap: 16px;
     text-align: center;
     padding: 24px;
-    background: radial-gradient(circle at 50% 40%, rgba(6, 10, 12, 0.32), rgba(4, 7, 9, 0.66));
-    -webkit-backdrop-filter: blur(2px);
-    backdrop-filter: blur(2px);
+    background: radial-gradient(circle at 50% 42%, rgba(6, 10, 12, 0.26), rgba(4, 7, 9, 0.55));
   }
 
   &-wordmark {
@@ -241,7 +308,7 @@
   }
 
   // game over card
-  &-card {
+  &-card-over {
     width: 100%;
     max-width: 330px;
     display: flex;

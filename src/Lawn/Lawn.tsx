@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Scene, { type HudState } from './Scene';
+import { TOWER_TYPES } from './Scene';
 import { Leaderboard, useGameScore } from '@shared/leaderboard';
 import { useGameEvent, telegramId } from '@shared/runtime';
 import { unlockAudio, setMuted, isMuted } from './audio';
-import { Candle, Skull, Sound, Tomb, Finger } from './icons';
+import { Candle, Skull, Sound, Tomb, Finger, Flame, Frost, Burst } from './icons';
 import { t } from './i18n';
 import './Lawn.less';
 
 const POSTER_URL = 'https://yinxinghuan.github.io/games/posters/get-off-my-lawn.png';
-const TOWER_COST = 90;
+const TYPE_ICON = [Flame, Frost, Burst]; // by TOWER_TYPES order
 
 type Phase = 'attract' | 'playing' | 'over';
 const BEST_KEY = 'gol_best';
@@ -23,6 +24,7 @@ export function Lawn() {
   const [showBoard, setShowBoard] = useState(false);
   const [muted, setMutedState] = useState(isMuted());
   const [upgradeHint, setUpgradeHint] = useState(false);
+  const [selectedType, setSelectedType] = useState(0);
   const prevTowers = useRef(0);
 
   const restartRef = useRef<() => void>(() => {});
@@ -88,27 +90,30 @@ export function Lawn() {
   }, [submitScore, sendBeatNotify]);
   const registerRestart = useCallback((fn: () => void) => { restartRef.current = fn; }, []);
 
-  const startGame = () => { unlockAudio(); prevTowers.current = 0; setPhase('playing'); };
-  const again = () => { prevTowers.current = 0; setPhase('playing'); };
+  const startGame = () => { unlockAudio(); prevTowers.current = 0; setSelectedType(0); setPhase('playing'); };
+  const again = () => { prevTowers.current = 0; setSelectedType(0); setPhase('playing'); };
   const toggleMute = () => { const m = !muted; setMuted(m); setMutedState(m); };
 
   useEffect(() => () => window.clearTimeout(bannerTimer.current), []);
 
-  // when the first brazier goes down, flash a one-time "tap to upgrade" hint
+  // when the first weapon goes down, flash a one-time "tap to upgrade" hint
   useEffect(() => {
     if (prevTowers.current === 0 && hud.towers === 1) {
       setUpgradeHint(true);
-      const id = window.setTimeout(() => setUpgradeHint(false), 3600);
+      const id = window.setTimeout(() => setUpgradeHint(false), 4000);
       prevTowers.current = hud.towers;
       return () => window.clearTimeout(id);
     }
     prevTowers.current = hud.towers;
   }, [hud.towers]);
 
+  const sel = TOWER_TYPES[selectedType];
+
   return (
     <div className="gol">
       <Scene
         mode={phase === 'playing' ? 'play' : phase === 'over' ? 'over' : 'attract'}
+        selectedType={selectedType}
         onHud={onHud}
         onWave={onWave}
         onGameOver={onGameOver}
@@ -121,27 +126,43 @@ export function Lawn() {
           <div className="gol-hud gol-lives">
             {[0, 1, 2, 3, 4].map((i) => <Candle key={i} lit={i < hud.lives} />)}
           </div>
-          <div className="gol-hud gol-souls"><Skull /> {hud.cash}</div>
+          <div className={`gol-hud gol-souls${hud.cash >= sel.cost ? ' gol-souls--ready' : ''}`}>
+            <Skull /> {hud.cash}
+          </div>
           <div className="gol-hud gol-meta">
             <span className="gol-chip"><b>{t('wave')}</b> {hud.wave || 1}</span>
             <span className="gol-chip gol-chip--score">{hud.score} <b>{t('score')}</b></span>
           </div>
 
-          {/* build guide — persists until the first brazier is placed; tells when + how */}
+          {/* build guide — until the first weapon is placed: what to do */}
           {hud.towers === 0 && (
             <div className="gol-guide">
               <div className="gol-finger"><Finger /></div>
-              {hud.cash >= TOWER_COST ? (
-                <div className="gol-guide-txt">
-                  <b>{t('guideBuild')}</b>
-                  <span>{t('guideBuildSub')} · {TOWER_COST} {t('souls')}</span>
-                </div>
-              ) : (
-                <div className="gol-guide-txt"><b>{t('guideEarn')}</b></div>
-              )}
+              {hud.cash >= sel.cost
+                ? <div className="gol-guide-txt"><b>{t('guideBuild')}</b><span>{t('guideBuildSub')}</span></div>
+                : <div className="gol-guide-txt"><b>{t('guideEarn')}</b></div>}
             </div>
           )}
-          {upgradeHint && <div className="gol-hint">{t('tapUpgrade')}</div>}
+          {upgradeHint && <div className="gol-hint">{t('tapUpgrade2')}</div>}
+
+          {/* ── build tray: the weapons, their cost, and which is selected ── */}
+          <div className="gol-tray">
+            {TOWER_TYPES.map((tw, i) => {
+              const Ico = TYPE_ICON[i] || Flame;
+              const affordable = hud.cash >= tw.cost;
+              return (
+                <button
+                  key={tw.id}
+                  className={`gol-card${i === selectedType ? ' gol-card--sel' : ''}${affordable ? '' : ' gol-card--poor'}`}
+                  onPointerDown={(e) => { e.stopPropagation(); setSelectedType(i); }}
+                >
+                  <span className="gol-card-ico"><Ico size={26} /></span>
+                  <span className="gol-card-name">{tw.name}</span>
+                  <span className="gol-card-cost"><Skull size={13} /> {tw.cost}</span>
+                </button>
+              );
+            })}
+          </div>
         </>
       )}
 
@@ -149,12 +170,16 @@ export function Lawn() {
         <div className="gol-wavebanner" key={waveBanner}>{t('wave')} {waveBanner}</div>
       )}
 
-      {/* ── attract ── */}
+      {/* ── attract — teaches the loop, then tap to play ── */}
       {phase === 'attract' && (
         <div className="gol-overlay" onPointerDown={startGame}>
           <div className="gol-wordmark">
             <span className="wm">Get Off<br />My Grave</span>
-            <span className="sub">{t('tapPlant')}</span>
+          </div>
+          <div className="gol-how">
+            <div className="gol-how-step"><span className="gol-how-ico"><Skull size={20} /></span>{t('howDead')}</div>
+            <div className="gol-how-step"><span className="gol-how-ico"><Flame size={20} /></span>{t('howBuild')}</div>
+            <div className="gol-how-step"><span className="gol-how-ico"><Tomb size={18} /></span>{t('howGuard')}</div>
           </div>
           <div className="gol-cta">{t('tapToStart')}</div>
         </div>
@@ -163,7 +188,7 @@ export function Lawn() {
       {/* ── game over ── */}
       {phase === 'over' && (
         <div className="gol-overlay">
-          <div className="gol-card">
+          <div className="gol-card-over">
             <div className="gol-kicker">{t('gameOver')}</div>
             <div className="gol-overttl">{t('title')}</div>
             <div className="gol-stats">

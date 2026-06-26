@@ -46,6 +46,37 @@ export function Sound({ on, size = 20 }: { on: boolean; size?: number }) {
   );
 }
 
+export function Flame({ size = 22 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>
+      <path d="M13 2.5c.7 2.7-.4 4.5-1.9 6.1-1.5 1.6-3.3 3-3.3 5.9a5.2 5.2 0 0 0 10.4 0c0-2-.9-3.6-1.8-4.9-.4 1-1.1 1.6-2 1.9.9-2.6.2-5.6-1.4-9z" fill="#8ff0c4" />
+      <path d="M12 11.5c1 1.3 1.6 2.4 1.6 3.5a1.7 1.7 0 0 1-3.4 0c0-1 .8-2.1 1.8-3.5z" fill="#fff6d6" />
+    </svg>
+  );
+}
+
+export function Frost({ size = 22 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>
+      <g stroke="#9fe6f4" strokeWidth="1.7" strokeLinecap="round">
+        <path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9" />
+        <path d="M12 6.4l2-2M12 6.4l-2-2M12 17.6l2 2M12 17.6l-2 2" />
+        <path d="M6.7 8.9l-2.7.2M6.7 8.9l.2-2.7M17.3 15.1l2.7-.2M17.3 15.1l-.2 2.7" />
+        <path d="M6.7 15.1l-.2 2.7M6.7 15.1l-2.7-.2M17.3 8.9l.2-2.7M17.3 8.9l2.7.2" />
+      </g>
+    </svg>
+  );
+}
+
+export function Burst({ size = 22 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>
+      <path d="M12 2l2.1 5.2 5.4-1.6-2.7 4.9 4.2 3.6-5.6.5.8 5.6L12 22l-4.2-3.3.8-5.6-5.6-.5 4.2-3.6L4.5 5.6 9.9 7.2z" fill="#caa6f2" />
+      <circle cx="12" cy="12" r="2.4" fill="#fff3d6" />
+    </svg>
+  );
+}
+
 export function Finger({ size = 46 }: { size?: number }) {
   return (
     <svg viewBox="0 0 48 48" width={size} height={size} className="gol-ico" aria-hidden>
