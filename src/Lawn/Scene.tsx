@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import {
   P, box, cyl, cone, ball,
@@ -104,12 +105,15 @@ interface Props {
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
-function flatify(g: THREE.Object3D) {
+function flatify(g: THREE.Object3D, opts?: { cast?: boolean; receive?: boolean }) {
+  const cast = opts?.cast ?? true;
+  const receive = opts?.receive ?? true;
   g.traverse((o) => {
-    const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+    const mesh = o as THREE.Mesh;
+    const m = mesh.material as THREE.MeshStandardMaterial | undefined;
     if (m && 'flatShading' in m) { m.flatShading = true; m.needsUpdate = true; }
-    (o as THREE.Mesh).castShadow = false;
-    (o as THREE.Mesh).receiveShadow = false;
+    mesh.castShadow = cast;
+    mesh.receiveShadow = receive;
   });
 }
 function disposeGroup(g: THREE.Object3D) {
@@ -162,22 +166,24 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
     lastHud: { lives: -1, cash: -1, score: -1, wave: -1 } as HudState,
     fxLayer: fx as THREE.Group,
     onHud: onHud as (h: HudState) => void,
+    motes: null as THREE.Points | null,
   });
 
-  // camera setup — angled diorama: house (core) low-centre, lane receding to the fence
+  // camera setup — orthographic iso diorama (premium clean-iso look)
   useEffect(() => {
-    const cam = camera as THREE.PerspectiveCamera;
-    cam.position.set(0, 11.0, 12.6);
-    cam.fov = 38; cam.near = 0.1; cam.far = 100;
-    cam.lookAt(0, 0.6, -0.8);
+    const cam = camera as THREE.OrthographicCamera;
+    cam.position.set(8.5, 11.5, 12.5);
+    cam.zoom = 78; cam.near = 0.1; cam.far = 200;
+    cam.lookAt(0, 0.3, -1.1);
     cam.updateProjectionMatrix();
   }, [camera]);
 
   // build the static board once
   useEffect(() => {
-    scene.background = new THREE.Color(0x9fd96a);
-    scene.fog = new THREE.Fog(0x9fd96a, 16, 30);
+    scene.add(makeSkyDome());
+    scene.fog = new THREE.Fog(0xe9d3b0, 26, 46); // warm golden-hour haze
     buildBoard(root, S.current);
+    const motes = makeMotes(); scene.add(motes); S.current.motes = motes;
     scene.add(root); scene.add(fx);
     return () => {
       scene.remove(root); scene.remove(fx);
@@ -263,6 +269,8 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
     const st = S.current;
     const dt = Math.min(dtRaw, 0.05);
     st.time += dt;
+
+    if (st.motes) { st.motes.rotation.y += dt * 0.03; st.motes.position.y = Math.sin(st.time * 0.35) * 0.18; }
 
     // idle bob of plot markers (attract attention to affordable spots)
     for (const p of st.plots) {
@@ -418,21 +426,30 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
 
 // ─── board construction ─────────────────────────────────────────────────────
 function buildBoard(root: THREE.Group, st: any) {
-  // green lawn base
-  const base = box(11, 0.4, 16, 0x7fc24a, 0, -0.2, -1.5);
-  flatify(base); root.add(base);
-  // darker soil rim
-  const rim = box(11.6, 0.3, 16.6, 0x5a8f38, 0, -0.42, -1.5);
-  flatify(rim); root.add(rim);
+  // soft sage lawn base (receives shadows, doesn't cast)
+  const base = box(11, 0.4, 16, 0x9cb568, 0, -0.2, -1.5);
+  flatify(base, { cast: false, receive: true }); root.add(base);
+  // warm soil rim
+  const rim = box(11.6, 0.3, 16.6, 0x6f6a3c, 0, -0.42, -1.5);
+  flatify(rim, { cast: false, receive: true }); root.add(rim);
 
-  // central dirt path (road tiles down the lane)
-  for (let z = SPAWN_Z + 0.5; z < HOUSE_Z + 0.6; z += 1) {
-    for (let i = -1; i <= 1; i++) {
-      const tile = roadTile();
-      tile.position.set(i * 0.7, 0, z);
-      tile.scale.set(0.75, 1, 1.02);
-      flatify(tile); root.add(tile);
-    }
+  // warm packed-dirt garden path down the lane (on-theme; no urban asphalt)
+  const pathLen = (HOUSE_Z + 1.0) - (SPAWN_Z - 0.2);
+  const pathMid = (SPAWN_Z - 0.2 + HOUSE_Z + 1.0) / 2;
+  const dirt = box(1.78, 0.16, pathLen, 0x9c7c4d, 0, 0.06, pathMid);
+  flatify(dirt, { cast: false, receive: true }); root.add(dirt);
+  const dirt2 = box(1.5, 0.2, pathLen - 0.3, 0xab8a58, 0, 0.08, pathMid);
+  flatify(dirt2, { cast: false, receive: true }); root.add(dirt2);
+  for (const sx of [-1, 1]) {                       // pale stone edging
+    const edge = box(0.14, 0.2, pathLen, 0xc4b89a, sx * 0.92, 0.09, pathMid);
+    flatify(edge, { cast: false, receive: true }); root.add(edge);
+  }
+  // a few embedded flagstones for texture
+  for (let k = 0; k < 9; k++) {
+    const fx2 = ((k * 3.1) % 1.2) - 0.6;
+    const fz = SPAWN_Z + 0.4 + k * 1.15;
+    const stone = box(0.5, 0.05, 0.42, k % 2 ? 0xb6a888 : 0xc0b294, fx2, 0.15, fz);
+    flatify(stone, { cast: false, receive: true }); root.add(stone);
   }
 
   // grass texture tufts beside the lane
@@ -440,7 +457,7 @@ function buildBoard(root: THREE.Group, st: any) {
     const ang = (k * 2.4) % 1;
     const x = (ang < 0.5 ? -1 : 1) * (1.6 + (k % 4) * 0.45);
     const z = SPAWN_Z + (k * 0.55) % 12;
-    const tuft = box(0.12, 0.22 + (k % 3) * 0.05, 0.12, 0x4fae44, x, 0.1, z);
+    const tuft = box(0.12, 0.22 + (k % 3) * 0.05, 0.12, 0x6f9a3e, x, 0.1, z);
     flatify(tuft); root.add(tuft);
   }
 
@@ -687,14 +704,68 @@ function angDelta(a: number, b: number) {
   return d;
 }
 
-// ─── lights ─────────────────────────────────────────────────────────────────
+// ─── golden-hour gradient sky dome (BackSide shader sphere) ──────────────────
+function makeSkyDome(): THREE.Mesh {
+  return new THREE.Mesh(
+    new THREE.SphereGeometry(160, 24, 14),
+    new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false, fog: false,
+      uniforms: {
+        top: { value: new THREE.Color(0x7ea8d6) },   // soft periwinkle crown
+        mid: { value: new THREE.Color(0xf2ddb4) },   // warm cream band
+        bot: { value: new THREE.Color(0xf3c489) },   // peachy horizon
+        glow: { value: new THREE.Color(0xffe3a6) },  // amber sun glow
+        glowDir: { value: new THREE.Vector3(-0.5, -0.05, -0.6).normalize() },
+      },
+      vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: 'varying vec3 vP; uniform vec3 top; uniform vec3 mid; uniform vec3 bot; uniform vec3 glow; uniform vec3 glowDir; void main(){ vec3 n = normalize(vP); float h = n.y; vec3 c = h > 0.0 ? mix(mid, top, clamp(h*1.2,0.0,1.0)) : mix(mid, bot, clamp(-h*1.7,0.0,1.0)); float g = clamp(dot(n, glowDir), 0.0, 1.0); c = mix(c, glow, g*g*0.6); gl_FragColor = vec4(c,1.0); }',
+    }),
+  );
+}
+
+// ─── floating pollen / dust motes catching the warm light ────────────────────
+function makeMotes(): THREE.Points {
+  const N = 80;
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    pos[i * 3] = (Math.random() * 2 - 1) * 6;
+    pos[i * 3 + 1] = Math.random() * 5 + 0.4;
+    pos[i * 3 + 2] = (Math.random() * 2 - 1) * 7 - 1;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return new THREE.Points(geo, new THREE.PointsMaterial({
+    color: 0xfff0cf, size: 0.09, transparent: true, opacity: 0.6,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true, fog: false,
+  }));
+}
+
+// ─── lights — golden-hour suburb: cool sky fill + warm key (shadows) + cool rim ─
 function Lights() {
+  const keyRef = useRef<THREE.DirectionalLight>(null);
+  useEffect(() => {
+    const k = keyRef.current; if (!k) return;
+    k.shadow.mapSize.set(2048, 2048);
+    k.shadow.camera.near = 1; k.shadow.camera.far = 60;
+    k.shadow.camera.left = -10; k.shadow.camera.right = 10;
+    k.shadow.camera.top = 12; k.shadow.camera.bottom = -12;
+    k.shadow.bias = -0.0005;
+    k.shadow.normalBias = 0.02;
+    k.target.position.set(0, 0, -1);
+    k.target.updateMatrixWorld();
+  }, []);
   return (
     <>
-      <hemisphereLight args={[0xddf6ff, 0x6a8a3a, 0.9]} />
-      <ambientLight intensity={0.35} />
-      <directionalLight position={[6, 12, 6]} intensity={1.15} color={0xfff4d6} />
-      <directionalLight position={[-6, 6, -4]} intensity={0.3} color={0x9fd6ff} />
+      <hemisphereLight args={[0xfde6c8, 0x4f6a38, 0.62]} />
+      <ambientLight intensity={0.18} />
+      <directionalLight
+        ref={keyRef}
+        position={[7, 13, 6]}
+        intensity={1.45}
+        color={0xffe7bd}
+        castShadow
+      />
+      <directionalLight position={[-8, 5, -7]} intensity={0.34} color={0x9fc9e0} />
     </>
   );
 }
@@ -703,13 +774,24 @@ function Lights() {
 export default function Scene(props: Props) {
   return (
     <Canvas
+      shadows={{ type: THREE.PCFSoftShadowMap }}
+      orthographic
       dpr={[1, 2]}
-      gl={{ antialias: true, powerPreference: 'high-performance' }}
-      camera={{ position: [0, 8.6, 8.8], fov: 44 }}
+      gl={{
+        antialias: true,
+        powerPreference: 'high-performance',
+        toneMapping: THREE.ACESFilmicToneMapping,
+        toneMappingExposure: 1.06,
+      }}
+      camera={{ position: [9, 12, 13], zoom: 52, near: 0.1, far: 200 }}
       style={{ position: 'absolute', inset: 0, touchAction: 'none' }}
     >
       <Lights />
       <World {...props} />
+      <EffectComposer>
+        <Bloom mipmapBlur intensity={0.42} luminanceThreshold={0.72} luminanceSmoothing={0.18} />
+        <Vignette eskil={false} offset={0.18} darkness={0.62} />
+      </EffectComposer>
     </Canvas>
   );
 }
