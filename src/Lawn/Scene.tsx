@@ -22,14 +22,19 @@ const SPAWN_Z = -7.2;
 const HOUSE_Z = 3.4;
 const LANE_HALF = 0.8;
 
-// Tower plots flank the lane at two depths-of-field columns.
+// Tower plots — two tidy ranks flanking the grave-path. Inner rank (close to the
+// path, 4 evenly-spaced rows) is the main defensive line; an outer rank (2 rows,
+// staggered) gives a second tier. Symmetric + aligned so it reads as a planned
+// cemetery, not scattered rings. Each plot sits on a visible stone build-pad.
 const PLOT_SPOTS: [number, number][] = [
-  [-1.7, -4.2], [1.7, -4.2],
-  [-1.7, -1.4], [1.7, -1.4],
-  [-1.7, 1.2], [1.7, 1.2],
-  [-3.0, -3.0], [3.0, -3.0],
-  [-3.0, 0.0], [3.0, 0.0],
-  [-3.0, 2.4], [3.0, 2.4],
+  // inner rank — left & right, 4 rows down the path
+  [-1.75, -4.2], [1.75, -4.2],
+  [-1.75, -1.9], [1.75, -1.9],
+  [-1.75, 0.4], [1.75, 0.4],
+  [-1.75, 2.7], [1.75, 2.7],
+  // outer rank — staggered between the inner rows
+  [-3.05, -3.05], [3.05, -3.05],
+  [-3.05, 1.55], [3.05, 1.55],
 ];
 
 // ─── Intruder roster — the funny lawn invaders ──────────────────────────────
@@ -491,11 +496,32 @@ function buildBoard(root: THREE.Group, st: any) {
   crypt.position.set(0, 0, HOUSE_Z + 0.8);
   root.add(crypt); st.houseGroup = crypt;
 
-  // graveyard lamp-posts flanking the crypt (dim warm glow → blooms in the dark)
+  // graveyard lamp-posts flanking the crypt — each casts a soft warm pool
   for (const sx of [-1, 1]) {
     const lp = lamp(); lp.scale.setScalar(1.45);
     lp.position.set(sx * 2.4, 0, HOUSE_Z + 0.6); lp.rotation.y = sx < 0 ? Math.PI : 0;
     flatify(lp); root.add(lp);
+    const warm = new THREE.PointLight(0xffc27a, 5.5, 4.6, 2);
+    warm.position.set(sx * 2.4 + sx * 0.44, 1.5, HOUSE_Z + 0.6); warm.castShadow = false;
+    root.add(warm);
+  }
+  // a standing lantern part-way down the path — another warm anchor
+  {
+    const lp = lamp(); lp.scale.setScalar(1.3);
+    lp.position.set(-3.3, 0, -1.0); flatify(lp); root.add(lp);
+    const warm = new THREE.PointLight(0xffc27a, 4.5, 4.2, 2);
+    warm.position.set(-3.0, 1.35, -1.0); warm.castShadow = false; root.add(warm);
+  }
+  // scattered grave-candles — emissive only (bloom glow, no light cost) for warm sparkle
+  const candleSpots: [number, number][] = [
+    [-2.6, -3.4], [2.6, -3.0], [3.2, -1.0], [-3.2, -0.4], [2.6, 2.0], [-2.5, 1.6], [-3.6, -4.6],
+  ];
+  for (const [cx, cz] of candleSpots) {
+    const stick = box(0.07, 0.18, 0.07, 0xd8cdb0, cx, 0.24, cz); flatify(stick); root.add(stick);
+    const flame = ball(0.06, 0xffd089, cx, 0.36, cz, 0);
+    const fm = flame.material as THREE.MeshStandardMaterial;
+    fm.emissive = new THREE.Color(0xffb45a); fm.emissiveIntensity = 1.8; flame.castShadow = false;
+    root.add(flame);
   }
 
   // rusted iron fence along the back
@@ -525,12 +551,23 @@ function buildBoard(root: THREE.Group, st: any) {
     flatify(pl); root.add(pl);
   }
 
-  // tower plots
+  // tower plots — each on a mossy stone build-pad (reads as an intentional pedestal)
   for (const [x, z] of PLOT_SPOTS) {
+    root.add(makePad(x, z));
     const plot = makePlot(x, z);
     root.add(plot.disc); root.add(plot.marker);
     st.plots.push(plot);
   }
+}
+
+function makePad(x: number, z: number): THREE.Group {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  g.add(flatify(box(0.92, 0.12, 0.92, 0x3c4138, 0, 0.06, 0), { cast: false, receive: true }));
+  g.add(flatify(box(0.78, 0.1, 0.78, 0x4a5044, 0, 0.13, 0), { cast: false, receive: true }));
+  // a touch of moss on two corners
+  g.add(flatify(box(0.3, 0.03, 0.22, 0x3a4a30, -0.22, 0.19, 0.2), { cast: false, receive: true }));
+  return g;
 }
 
 // blend every material in a group toward a target colour (darken/tint for the night)
@@ -545,20 +582,39 @@ function darkenGroup(g: THREE.Object3D, hex: number, amt: number) {
 // ─── bespoke graveyard props ─────────────────────────────────────────────────
 function makeCrypt(): THREE.Group {
   const g = new THREE.Group();
-  const stone = 0x6a6f69, stoneD = 0x4c504b, dark = 0x14140f;
-  g.add(flatify(box(2.0, 0.18, 1.7, stoneD, 0, 0.09, 0)));          // plinth
-  g.add(flatify(box(1.7, 1.15, 1.4, stone, 0, 0.75, 0)));           // walls
-  for (const sx of [-1, 1])                                          // corner pilasters
-    g.add(flatify(box(0.22, 1.2, 0.22, stoneD, sx * 0.82, 0.78, 0.6)));
-  const roof = cone(1.45, 0.6, 4, stoneD, 0, 1.62, 0); roof.rotation.y = Math.PI / 4; g.add(flatify(roof));
-  // dark archway doorway with a faint spectral glow within
-  g.add(flatify(box(0.62, 0.86, 0.1, dark, 0, 0.5, 0.71)));
-  const glow = box(0.5, 0.72, 0.04, 0x2f8f63, 0, 0.46, 0.74, { e: 0x2f8f63, ei: 0.9 });
+  const stone = 0x73776f, stoneL = 0x848980, stoneD = 0x4e524b, dark = 0x100f0c, iron = 0x232420;
+  // stepped plinth (two steps — reads as a built monument, not a box)
+  g.add(flatify(box(1.62, 0.16, 1.4, stoneD, 0, 0.08, 0)));
+  g.add(flatify(box(1.34, 0.14, 1.16, stone, 0, 0.22, 0)));
+  // body — compact chamber
+  g.add(flatify(box(1.16, 0.92, 0.96, stone, 0, 0.72, 0)));
+  // string course (lighter trim band) for detail
+  g.add(flatify(box(1.22, 0.08, 1.02, stoneL, 0, 1.12, 0)));
+  // two front columns flanking the doorway
+  for (const sx of [-1, 1]) {
+    g.add(flatify(cyl(0.1, 0.11, 0.78, 10, stoneL, sx * 0.44, 0.66, 0.5)));
+    g.add(flatify(box(0.2, 0.08, 0.2, stoneL, sx * 0.44, 1.08, 0.5)));   // capital
+    g.add(flatify(box(0.2, 0.08, 0.2, stoneD, sx * 0.44, 0.29, 0.5)));   // base
+  }
+  // arched doorway: dark recess + warm-lit interior + iron bars
+  g.add(flatify(box(0.5, 0.78, 0.12, dark, 0, 0.62, 0.46)));
+  g.add(flatify(cyl(0.25, 0.25, 0.12, 12, dark, 0, 1.0, 0.46), { cast: false }));
+  const glow = box(0.4, 0.62, 0.05, 0xffb060, 0, 0.58, 0.49, { e: 0xffb060, ei: 1.1 });
   glow.castShadow = false; g.add(glow);
-  // a stone cross crowning the roof
-  g.add(flatify(box(0.12, 0.5, 0.12, stone, 0, 2.1, 0)));
-  g.add(flatify(box(0.34, 0.12, 0.12, stone, 0, 2.18, 0)));
-  g.scale.setScalar(1.25);
+  for (const bx of [-0.12, 0, 0.12])                                     // iron gate bars
+    g.add(flatify(box(0.03, 0.74, 0.03, iron, bx, 0.62, 0.53), { cast: false }));
+  // warm soft light spilling from the tomb (ask #1 — warm source)
+  const warm = new THREE.PointLight(0xffb774, 7, 4.2, 2);
+  warm.position.set(0, 0.7, 0.9); warm.castShadow = false; g.add(warm);
+  // low-pitched gabled roof + cross finial
+  const roof = cone(1.0, 0.5, 4, stoneD, 0, 1.42, 0); roof.rotation.y = Math.PI / 4; g.add(flatify(roof));
+  g.add(flatify(box(0.1, 0.42, 0.1, stoneL, 0, 1.86, 0)));
+  g.add(flatify(box(0.28, 0.1, 0.1, stoneL, 0, 1.92, 0)));
+  // weathered urns on the plinth corners
+  for (const sx of [-1, 1]) {
+    g.add(flatify(cyl(0.1, 0.07, 0.18, 8, stoneD, sx * 0.56, 0.32, 0.42)));
+  }
+  g.scale.setScalar(0.92);
   return g;
 }
 function makeGravestone(i: number): THREE.Group {
