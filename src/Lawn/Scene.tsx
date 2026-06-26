@@ -17,15 +17,21 @@ const UPGRADE_COST = (lvl: number) => 70 + lvl * 55;
 const TOWER_MAX_LVL = 4;
 const ENEMY_SCALE = 0.46;
 
-// ── Winding grave-path: a snaking route from the gate (top) to the crypt (front).
-// A circuitous path = more fun TD (towers in the bend pockets cover several
-// segments). Enemies follow it by cumulative distance.
+// ── Regular serpentine grave-path (boustrophedon): straight rows that switch
+// back across the full field, joined by U-turns at alternating ends → a clean,
+// readable snake that maximises the ground. Towers drop in the regular gaps
+// between rows (each covers the two adjacent lanes). Enemies follow it by distance.
+const ROW_X = 3.2;                                   // how far each row runs left/right
+const ROWS_Z = [-5.0, -2.4, 0.2, 2.8];              // 4 evenly-spaced rows
 const PATH: [number, number][] = [
-  [0.0, -6.9],
-  [-2.6, -4.3],
-  [2.6, -1.5],
-  [-2.3, 1.2],
-  [0.0, 3.2],
+  [-ROW_X - 0.6, ROWS_Z[0]],                         // spawn (off the left edge)
+  [ROW_X, ROWS_Z[0]],
+  [ROW_X, ROWS_Z[1]],
+  [-ROW_X, ROWS_Z[1]],
+  [-ROW_X, ROWS_Z[2]],
+  [ROW_X, ROWS_Z[2]],
+  [ROW_X, ROWS_Z[3]],
+  [0.0, ROWS_Z[3]],                                  // into the crypt
 ];
 const HOUSE_Z = PATH[PATH.length - 1][1]; // crypt sits at the path's end
 const SPAWN_Z = PATH[0][1];                // gate end (decor scatter reference)
@@ -53,18 +59,17 @@ function posAlong(d: number) {
   return { x: s.ax + s.dx * s.len, z: s.az + s.dz * s.len, dx: s.dx, dz: s.dz, px: -s.dz, pz: s.dx };
 }
 
-// Tower plots flank the winding path in tidy symmetric pairs (computed from the
-// path so they always hug the curves). Each sits on a stone build-pad.
+// Tower plots — a clean grid in the gaps BETWEEN the serpentine rows. Each gap
+// tower sits between two lanes, so it hits enemies on both passes. Perfectly
+// regular (3 columns × 3 gap-rows) = reads as a planned cemetery, not scatter.
+const GAP_Z = [
+  (ROWS_Z[0] + ROWS_Z[1]) / 2,
+  (ROWS_Z[1] + ROWS_Z[2]) / 2,
+  (ROWS_Z[2] + ROWS_Z[3]) / 2,
+];
 const PLOT_SPOTS: [number, number][] = (() => {
   const spots: [number, number][] = [];
-  for (const frac of [0.14, 0.31, 0.48, 0.65, 0.82]) {
-    const p = posAlong(frac * PATH_TOTAL);
-    for (const side of [-1, 1]) {
-      const x = p.x + p.px * side * 1.8;
-      const z = p.z + p.pz * side * 1.8;
-      if (Math.abs(x) < 4.7) spots.push([+x.toFixed(2), +z.toFixed(2)]);
-    }
-  }
+  for (const gz of GAP_Z) for (const x of [-2.1, 0, 2.1]) spots.push([x, gz]);
   return spots;
 })();
 
