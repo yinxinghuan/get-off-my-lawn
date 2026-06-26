@@ -14,6 +14,8 @@ import { CHARACTERS as _CHARACTERS } from '@lab/builders/characters.js';
 import { ARCHETYPES as _ARCHETYPES } from '@lab/builders/archetypes.js';
 // @ts-ignore
 import { ANIMALS as _ANIMALS } from '@lab/builders/animals.js';
+// @ts-ignore
+import { MONSTERS as _MONSTERS } from '@lab/builders/monsters.js';
 
 type Group = THREE.Group;
 type Factory = () => Group;
@@ -38,6 +40,8 @@ export const PLANTS = plants.PLANTS as Record<string, Factory>;
 // people / intruders
 export const CHARACTERS = _CHARACTERS as Record<string, Factory>;
 export const ARCHETYPES = _ARCHETYPES as Record<string, Factory>;
+// undead — vampire / werewolf / zombie / ghost / skeleton / mummy
+export const MONSTERS = _MONSTERS as Record<string, Factory>;
 // ANIMALS is { name: { tile, make } }
 export const ANIMALS = _ANIMALS as Record<string, { tile: number; make: Factory }>;
 

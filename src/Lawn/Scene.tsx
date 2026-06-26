@@ -4,8 +4,8 @@ import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import {
   P, box, cyl, cone, ball,
-  grassTile, roadTile, house, fence, lamp, PLANTS,
-  CHARACTERS, ARCHETYPES, ANIMALS, rigOf,
+  fence, lamp, PLANTS,
+  CHARACTERS, MONSTERS, rigOf,
 } from './lab';
 import { sfx } from './audio';
 
@@ -42,32 +42,27 @@ interface IntruderDef {
   scale: number;
   legs: boolean;     // biped (swing legs) vs critter (bob)
 }
-function charDef(id: string, key: string, hp: number, spd: number, bounty: number, scale = 1): IntruderDef {
-  return { id, make: () => CHARACTERS[key](), hp, spd, bounty, scale, legs: true };
+function deadDef(id: string, key: string, hp: number, spd: number, bounty: number, scale = 1): IntruderDef {
+  // the freshly-dead — ordinary people who just died, come to squat your plot
+  return { id, make: () => paleDead(CHARACTERS[key]()), hp, spd, bounty, scale, legs: true };
 }
-function archDef(id: string, key: string, hp: number, spd: number, bounty: number, scale = 1): IntruderDef {
-  return { id, make: () => ARCHETYPES[key](), hp, spd, bounty, scale, legs: true };
-}
-function aniDef(id: string, key: string, hp: number, spd: number, bounty: number, scale = 1): IntruderDef {
-  return { id, make: () => ANIMALS[key].make(), hp, spd, bounty, scale, legs: false };
+function monDef(id: string, key: string, hp: number, spd: number, bounty: number, scale = 1, legs = true): IntruderDef {
+  return { id, make: () => MONSTERS[key](), hp, spd, bounty, scale, legs };
 }
 
-// pool grows with waves — early = critters & kids, later = rowdy & heavy
+// pool grows with waves — early = wisps & the freshly dead, later = heavy undead + werewolf boss
 const ROSTER: IntruderDef[] = [
-  aniDef('rabbit', 'rabbit', 18, 1.85, 6, 0.8),
-  aniDef('duck', 'duck', 16, 1.5, 6, 0.85),
-  charDef('kid', 'kid', 26, 1.25, 8),
-  aniDef('dog', 'dog', 30, 1.5, 9, 0.95),
-  charDef('student', 'student', 34, 1.15, 10),
-  aniDef('cat', 'cat', 22, 1.7, 8, 0.8),
-  aniDef('fox', 'fox', 28, 1.95, 11, 0.85),    // fast dasher
-  archDef('delivery', 'delivery', 44, 1.05, 13),
-  charDef('teen', 'teen', 40, 1.2, 12),
-  archDef('punk', 'punk', 50, 1.1, 15),
-  archDef('rapper', 'rapper', 56, 1.05, 16),
-  aniDef('pig', 'pig', 70, 0.9, 18, 1.05),
-  archDef('biker', 'biker', 90, 0.95, 22, 1.05),
-  aniDef('bear', 'bear', 180, 0.7, 45, 1.25),  // heavy tank boss
+  monDef('ghost', 'ghost', 16, 2.0, 7, 0.95, false),   // fast floating wisp
+  deadDef('kid', 'kid', 24, 1.3, 8),
+  monDef('skeleton', 'skeleton', 26, 1.55, 9, 0.95),
+  deadDef('student', 'student', 34, 1.18, 10),
+  deadDef('officeWoman', 'officeWoman', 36, 1.15, 11),
+  monDef('zombie', 'zombie', 58, 0.92, 14, 1.0),       // slow tank
+  deadDef('businessman', 'businessman', 44, 1.1, 13),
+  monDef('mummy', 'mummy', 72, 0.82, 16, 1.0),
+  monDef('vampire', 'vampire', 64, 1.32, 18, 1.0),     // fast + tanky
+  deadDef('teen', 'teen', 40, 1.22, 12),
+  monDef('werewolf', 'werewolf', 190, 0.98, 48, 1.22),  // heavy boss
 ];
 function poolForWave(w: number): IntruderDef[] {
   // unlock ~2 new roster entries per wave
@@ -88,6 +83,7 @@ interface Tower {
   g: THREE.Group; head: THREE.Object3D; ring: THREE.Mesh;
   x: number; z: number; level: number;
   range: number; dmg: number; rate: number; cd: number; yaw: number;
+  light?: THREE.PointLight; flicker: number;
 }
 interface Plot { x: number; z: number; disc: THREE.Mesh; marker: THREE.Group; tower: Tower | null; }
 interface Proj { g: THREE.Mesh; x: number; y: number; z: number; tx: number; ty: number; tz: number; target: Enemy; dmg: number; }
@@ -105,7 +101,7 @@ interface Props {
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
-function flatify(g: THREE.Object3D, opts?: { cast?: boolean; receive?: boolean }) {
+function flatify<T extends THREE.Object3D>(g: T, opts?: { cast?: boolean; receive?: boolean }): T {
   const cast = opts?.cast ?? true;
   const receive = opts?.receive ?? true;
   g.traverse((o) => {
@@ -115,6 +111,19 @@ function flatify(g: THREE.Object3D, opts?: { cast?: boolean; receive?: boolean }
     mesh.castShadow = cast;
     mesh.receiveShadow = receive;
   });
+  return g;
+}
+// tint a character toward ashen corpse pallor (the freshly dead)
+const PALLOR = new THREE.Color(0x97a6a4);
+function paleDead(g: THREE.Group): THREE.Group {
+  g.traverse((o) => {
+    const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+    if (m && m.color) {
+      m.color.lerp(PALLOR, 0.42);
+      if ('emissive' in m) { m.emissive = new THREE.Color(0x223033); (m as any).emissiveIntensity = 0.25; }
+    }
+  });
+  return g;
 }
 function disposeGroup(g: THREE.Object3D) {
   g.traverse((o) => {
@@ -167,6 +176,7 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
     fxLayer: fx as THREE.Group,
     onHud: onHud as (h: HudState) => void,
     motes: null as THREE.Points | null,
+    mist: null as THREE.Group | null,
   });
 
   // camera setup — orthographic iso diorama (premium clean-iso look)
@@ -181,9 +191,10 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
   // build the static board once
   useEffect(() => {
     scene.add(makeSkyDome());
-    scene.fog = new THREE.Fog(0xe9d3b0, 26, 46); // warm golden-hour haze
+    scene.fog = new THREE.Fog(0x141c28, 11, 30); // dense graveyard mist
     buildBoard(root, S.current);
     const motes = makeMotes(); scene.add(motes); S.current.motes = motes;
+    const mist = makeGroundMist(); scene.add(mist); S.current.mist = mist;
     scene.add(root); scene.add(fx);
     return () => {
       scene.remove(root); scene.remove(fx);
@@ -270,7 +281,15 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
     const dt = Math.min(dtRaw, 0.05);
     st.time += dt;
 
-    if (st.motes) { st.motes.rotation.y += dt * 0.03; st.motes.position.y = Math.sin(st.time * 0.35) * 0.18; }
+    if (st.motes) { st.motes.rotation.y += dt * 0.02; st.motes.position.y = Math.sin(st.time * 0.3) * 0.14; }
+    if (st.mist) {
+      for (const m of st.mist.children) {
+        m.position.x += (m as any).__sp * (m as any).__dir * dt;
+        m.rotation.z += dt * 0.04 * (m as any).__dir;
+        if (m.position.x > 5) (m as any).__dir = -1;
+        if (m.position.x < -5) (m as any).__dir = 1;
+      }
+    }
 
     // idle bob of plot markers (attract attention to affordable spots)
     for (const p of st.plots) {
@@ -364,6 +383,9 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
     // ── towers target + fire ──
     for (const tw of st.towers) {
       tw.cd -= dt;
+      // brazier flame flicker → restless pool of light
+      tw.flicker += dt * 11;
+      if (tw.light) tw.light.intensity = (5 + tw.level * 1.6) * (0.78 + 0.22 * Math.sin(tw.flicker) + 0.08 * Math.sin(tw.flicker * 2.7));
       // find nearest live enemy in range (prefer most advanced = highest z)
       let best: Enemy | null = null; let bestZ = -Infinity;
       for (const en of st.enemies) {
@@ -426,63 +448,80 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
 
 // ─── board construction ─────────────────────────────────────────────────────
 function buildBoard(root: THREE.Group, st: any) {
-  // soft sage lawn base (receives shadows, doesn't cast)
-  const base = box(11, 0.4, 16, 0x9cb568, 0, -0.2, -1.5);
+  // dark mossy graveyard ground (receives the long moonlight shadows)
+  const base = box(11, 0.4, 16, 0x36402f, 0, -0.2, -1.5);
   flatify(base, { cast: false, receive: true }); root.add(base);
-  // warm soil rim
-  const rim = box(11.6, 0.3, 16.6, 0x6f6a3c, 0, -0.42, -1.5);
+  const rim = box(11.6, 0.3, 16.6, 0x201b15, 0, -0.42, -1.5);
   flatify(rim, { cast: false, receive: true }); root.add(rim);
+  // mossy darker blotches on the ground for texture
+  for (let k = 0; k < 16; k++) {
+    const mx = ((k * 4.7) % 9) - 4.5, mz = SPAWN_Z + ((k * 2.3) % 13);
+    if (Math.abs(mx) < 1.2) continue;
+    const moss = box(0.7 + (k % 3) * 0.3, 0.02, 0.6 + (k % 2) * 0.4, k % 2 ? 0x2c3626 : 0x3f4a33, mx, 0.02, mz);
+    flatify(moss, { cast: false, receive: true }); root.add(moss);
+  }
 
-  // warm packed-dirt garden path down the lane (on-theme; no urban asphalt)
+  // cobbled grave-path down the lane (dark earth + mossy stone edging)
   const pathLen = (HOUSE_Z + 1.0) - (SPAWN_Z - 0.2);
   const pathMid = (SPAWN_Z - 0.2 + HOUSE_Z + 1.0) / 2;
-  const dirt = box(1.78, 0.16, pathLen, 0x9c7c4d, 0, 0.06, pathMid);
+  const dirt = box(1.8, 0.16, pathLen, 0x39342c, 0, 0.06, pathMid);
   flatify(dirt, { cast: false, receive: true }); root.add(dirt);
-  const dirt2 = box(1.5, 0.2, pathLen - 0.3, 0xab8a58, 0, 0.08, pathMid);
-  flatify(dirt2, { cast: false, receive: true }); root.add(dirt2);
-  for (const sx of [-1, 1]) {                       // pale stone edging
-    const edge = box(0.14, 0.2, pathLen, 0xc4b89a, sx * 0.92, 0.09, pathMid);
+  for (const sx of [-1, 1]) {
+    const edge = box(0.16, 0.22, pathLen, 0x565d4b, sx * 0.92, 0.1, pathMid);
     flatify(edge, { cast: false, receive: true }); root.add(edge);
   }
-  // a few embedded flagstones for texture
-  for (let k = 0; k < 9; k++) {
-    const fx2 = ((k * 3.1) % 1.2) - 0.6;
-    const fz = SPAWN_Z + 0.4 + k * 1.15;
-    const stone = box(0.5, 0.05, 0.42, k % 2 ? 0xb6a888 : 0xc0b294, fx2, 0.15, fz);
+  for (let k = 0; k < 10; k++) {                    // cobblestones
+    const cx = ((k * 3.1) % 1.2) - 0.6;
+    const cz = SPAWN_Z + 0.4 + k * 1.1;
+    const stone = box(0.46, 0.06, 0.4, k % 2 ? 0x4a4d42 : 0x55594c, cx, 0.14, cz);
     flatify(stone, { cast: false, receive: true }); root.add(stone);
   }
 
-  // grass texture tufts beside the lane
-  for (let k = 0; k < 26; k++) {
+  // dead-grass tufts beside the path
+  for (let k = 0; k < 24; k++) {
     const ang = (k * 2.4) % 1;
-    const x = (ang < 0.5 ? -1 : 1) * (1.6 + (k % 4) * 0.45);
+    const x = (ang < 0.5 ? -1 : 1) * (1.7 + (k % 4) * 0.42);
     const z = SPAWN_Z + (k * 0.55) % 12;
-    const tuft = box(0.12, 0.22 + (k % 3) * 0.05, 0.12, 0x6f9a3e, x, 0.1, z);
+    const tuft = box(0.1, 0.2 + (k % 3) * 0.06, 0.1, 0x5a5734, x, 0.1, z);
     flatify(tuft); root.add(tuft);
   }
 
-  // the house = the core you defend (just behind the lane's end)
-  const h = house();
-  h.scale.setScalar(1.55);
-  h.position.set(0, 0, HOUSE_Z + 0.7);   // front door (+Z face) toward the camera
-  flatify(h); root.add(h); st.houseGroup = h;
+  // the CRYPT = the grave you defend (just behind the lane's end)
+  const crypt = makeCrypt();
+  crypt.position.set(0, 0, HOUSE_Z + 0.8);
+  root.add(crypt); st.houseGroup = crypt;
 
-  // a lamp by the porch for character
-  const lp = lamp(); lp.scale.setScalar(1.5); lp.position.set(2.2, 0, HOUSE_Z + 1.1); flatify(lp); root.add(lp);
+  // graveyard lamp-posts flanking the crypt (dim warm glow → blooms in the dark)
+  for (const sx of [-1, 1]) {
+    const lp = lamp(); lp.scale.setScalar(1.45);
+    lp.position.set(sx * 2.4, 0, HOUSE_Z + 0.6); lp.rotation.y = sx < 0 ? Math.PI : 0;
+    flatify(lp); root.add(lp);
+  }
 
-  // fence border along the back
+  // rusted iron fence along the back
   for (let i = -4; i <= 4; i++) {
-    const f = fence(); f.position.set(i * 1.0, 0, SPAWN_Z - 0.1); f.scale.set(1, 1.1, 1);
+    const f = fence(); f.position.set(i * 1.0, 0, SPAWN_Z - 0.1); f.scale.set(1, 1.15, 1);
+    darkenGroup(f, 0x20221f, 0.7);
     flatify(f); root.add(f);
   }
 
-  // decorative plants in the corners
-  const decoSpots: [number, number, string][] = [
-    [-4.2, HOUSE_Z + 1.0, 'roundTree'], [4.2, SPAWN_Z + 1.2, 'pine'],
-    [-4.3, -1.5, 'bush'], [4.3, HOUSE_Z, 'roundTree'], [-4.2, SPAWN_Z + 2, 'pine'],
+  // scattered gravestones + bare dead trees flanking the path
+  const graveSpots: [number, number][] = [
+    [-2.6, -3.4], [2.6, -3.0], [-3.2, -0.4], [3.2, -1.0], [-2.5, 1.6], [2.6, 2.0],
+    [-3.6, -4.6], [3.6, 0.8], [-2.4, 3.2],
   ];
-  for (const [x, z, kind] of decoSpots) {
-    const pl = PLANTS[kind](); pl.position.set(x, 0, z); pl.scale.setScalar(1.1);
+  graveSpots.forEach(([x, z], i) => {
+    const gs = makeGravestone(i);
+    gs.position.set(x, 0, z); gs.rotation.y = (i * 0.7) % 0.5 - 0.25;
+    root.add(gs);
+  });
+  const treeSpots: [number, number, string][] = [
+    [-4.2, HOUSE_Z + 0.6, 'pine'], [4.2, SPAWN_Z + 1.2, 'roundTree'],
+    [-4.3, -2.2, 'roundTree'], [4.3, HOUSE_Z - 0.4, 'pine'],
+  ];
+  for (const [x, z, kind] of treeSpots) {
+    const pl = PLANTS[kind](); pl.position.set(x, 0, z); pl.scale.setScalar(1.15);
+    darkenGroup(pl, 0x1c2418, 0.66);   // dead/bare silhouette
     flatify(pl); root.add(pl);
   }
 
@@ -492,6 +531,49 @@ function buildBoard(root: THREE.Group, st: any) {
     root.add(plot.disc); root.add(plot.marker);
     st.plots.push(plot);
   }
+}
+
+// blend every material in a group toward a target colour (darken/tint for the night)
+function darkenGroup(g: THREE.Object3D, hex: number, amt: number) {
+  const target = new THREE.Color(hex);
+  g.traverse((o) => {
+    const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+    if (m && m.color) m.color.lerp(target, amt);
+  });
+}
+
+// ─── bespoke graveyard props ─────────────────────────────────────────────────
+function makeCrypt(): THREE.Group {
+  const g = new THREE.Group();
+  const stone = 0x6a6f69, stoneD = 0x4c504b, dark = 0x14140f;
+  g.add(flatify(box(2.0, 0.18, 1.7, stoneD, 0, 0.09, 0)));          // plinth
+  g.add(flatify(box(1.7, 1.15, 1.4, stone, 0, 0.75, 0)));           // walls
+  for (const sx of [-1, 1])                                          // corner pilasters
+    g.add(flatify(box(0.22, 1.2, 0.22, stoneD, sx * 0.82, 0.78, 0.6)));
+  const roof = cone(1.45, 0.6, 4, stoneD, 0, 1.62, 0); roof.rotation.y = Math.PI / 4; g.add(flatify(roof));
+  // dark archway doorway with a faint spectral glow within
+  g.add(flatify(box(0.62, 0.86, 0.1, dark, 0, 0.5, 0.71)));
+  const glow = box(0.5, 0.72, 0.04, 0x2f8f63, 0, 0.46, 0.74, { e: 0x2f8f63, ei: 0.9 });
+  glow.castShadow = false; g.add(glow);
+  // a stone cross crowning the roof
+  g.add(flatify(box(0.12, 0.5, 0.12, stone, 0, 2.1, 0)));
+  g.add(flatify(box(0.34, 0.12, 0.12, stone, 0, 2.18, 0)));
+  g.scale.setScalar(1.25);
+  return g;
+}
+function makeGravestone(i: number): THREE.Group {
+  const g = new THREE.Group();
+  const stone = i % 3 === 0 ? 0x5d6058 : i % 3 === 1 ? 0x676a61 : 0x55584f;
+  if (i % 4 === 0) {                                  // cross headstone
+    g.add(flatify(box(0.16, 0.74, 0.14, stone, 0, 0.42, 0)));
+    g.add(flatify(box(0.46, 0.16, 0.14, stone, 0, 0.56, 0)));
+  } else {                                            // rounded slab
+    g.add(flatify(box(0.46, 0.72, 0.16, stone, 0, 0.4, 0)));
+    g.add(flatify(cyl(0.23, 0.23, 0.16, 12, stone, 0, 0.76, 0)));
+  }
+  g.add(flatify(box(0.6, 0.12, 0.36, 0x4a4d45, 0, 0.06, 0.04)));    // base
+  g.scale.setScalar(0.95 + (i % 3) * 0.12);
+  return g;
 }
 
 function makePlot(x: number, z: number): Plot {
@@ -508,11 +590,11 @@ function makePlot(x: number, z: number): Plot {
   const marker = new THREE.Group();
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.34, 0.46, 20),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({ color: 0x9fe0c0, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
   );
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06;
   const plus = new THREE.Group();
-  const c = 0xfff27a;
+  const c = 0x8fe6b8;
   plus.add(box(0.26, 0.05, 0.08, c, 0, 0.12, 0));
   plus.add(box(0.08, 0.05, 0.26, c, 0, 0.12, 0));
   marker.add(plus); marker.add(ring);
@@ -521,28 +603,33 @@ function makePlot(x: number, z: number): Plot {
 }
 
 // ─── towers ─────────────────────────────────────────────────────────────────
-const LVL_COLOR = [0x3fb6ac, 0x57c8e0, 0x6ee05a, 0xffd23f, 0xff7a4d];
+// spectral flame colours by level — eerie green → teal → cyan → violet
+const LVL_COLOR = [0x52b46e, 0x44c9aa, 0x63d2e6, 0xb583ec, 0xffa85c];
 function plantTower(root: THREE.Group, plot: Plot): Tower {
   const g = new THREE.Group();
   g.position.set(plot.x, 0, plot.z);
-  // base — a little garden planter the sprinkler sits in
-  const base = cyl(0.42, 0.5, 0.24, 8, 0x7c5230, 0, 0.12, 0); flatify(base); g.add(base);
-  const soil = cyl(0.36, 0.36, 0.06, 8, 0x3f2d1c, 0, 0.25, 0); flatify(soil); g.add(soil);
-  const post = cyl(0.13, 0.16, 0.62, 8, 0x9aa1a8, 0, 0.56, 0); flatify(post); g.add(post);
-  // head (rotates to aim) — a sprinkler nozzle
-  const head = new THREE.Group(); head.position.y = 0.86;
-  const body = ball(0.26, LVL_COLOR[0], 0, 0, 0); flatify(body); head.add(body);
-  const nozzle = cyl(0.06, 0.11, 0.4, 8, 0x4a3526, 0, 0.08, 0.28); nozzle.rotation.x = Math.PI / 2; flatify(nozzle); head.add(nozzle);
-  const tip = ball(0.08, 0x9fd6ff, 0, 0.08, 0.46); flatify(tip); head.add(tip);
+  // a grave brazier on a dark stone plinth
+  const base = cyl(0.44, 0.52, 0.22, 8, 0x474b46, 0, 0.11, 0); flatify(base); g.add(base);
+  const post = cyl(0.11, 0.13, 0.58, 8, 0x2a2c29, 0, 0.5, 0); flatify(post); g.add(post);
+  const bowl = cyl(0.3, 0.18, 0.22, 10, 0x33352f, 0, 0.84, 0); flatify(bowl); g.add(bowl);
+  // head holds the spectral flame (head.children[0] = flame, recoloured on upgrade)
+  const head = new THREE.Group(); head.position.y = 0.98;
+  const flame = ball(0.24, LVL_COLOR[0], 0, 0, 0, 1);
+  (flame.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(LVL_COLOR[0]);
+  (flame.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.4;
+  flame.castShadow = false; head.add(flame);
   g.add(head);
-  // range ring (faint)
+  // flickering point light → warm pool on the surrounding graves (the "texture")
+  const light = new THREE.PointLight(LVL_COLOR[0], 6, 3.4, 2);
+  light.position.set(0, 1.0, 0); light.castShadow = false; g.add(light);
+  // range ring (faint spectral)
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.1, 0.1, 28),
-    new THREE.MeshBasicMaterial({ color: 0x3fb6ac, transparent: true, opacity: 0.12, side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({ color: 0x52b46e, transparent: true, opacity: 0.14, side: THREE.DoubleSide }),
   );
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; g.add(ring);
   root.add(g);
-  const tw: Tower = { g, head, ring, x: plot.x, z: plot.z, level: 1, range: 2.8, dmg: 9, rate: 1.6, cd: 0, yaw: 0 };
+  const tw: Tower = { g, head, ring, x: plot.x, z: plot.z, level: 1, range: 2.8, dmg: 9, rate: 1.6, cd: 0, yaw: 0, light, flicker: Math.random() * 6 };
   applyTowerLevel(tw);
   return tw;
 }
@@ -551,10 +638,11 @@ function applyTowerLevel(tw: Tower) {
   tw.dmg = 6 + tw.level * 5;
   tw.rate = 1.3 + tw.level * 0.35;
   const col = LVL_COLOR[Math.min(tw.level, LVL_COLOR.length - 1)];
-  const body = tw.head.children[0] as THREE.Mesh;
-  (body.material as THREE.MeshStandardMaterial).color.setHex(col);
-  body.scale.setScalar(1 + (tw.level - 1) * 0.18);
-  // range ring radius
+  const flame = tw.head.children[0] as THREE.Mesh;
+  const fm = flame.material as THREE.MeshStandardMaterial;
+  fm.color.setHex(col); fm.emissive.setHex(col);
+  flame.scale.setScalar(1 + (tw.level - 1) * 0.2);
+  if (tw.light) { tw.light.color.setHex(col); tw.light.intensity = 5 + tw.level * 1.6; tw.light.distance = 3 + tw.level * 0.4; }
   tw.ring.geometry.dispose();
   tw.ring.geometry = new THREE.RingGeometry(tw.range - 0.06, tw.range, 40);
 }
@@ -597,18 +685,23 @@ function killEnemy(st: any, en: Enemy, _root: THREE.Group) {
 
 // ─── projectiles + fx ───────────────────────────────────────────────────────
 function fireWater(fx: THREE.Group, st: any, tw: Tower, target: Enemy) {
-  const g = ball(0.12, 0x9fd6ff, 0, 0, 0);
-  (g.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(0x2a6fb0);
-  g.position.set(tw.x, 0.86, tw.z);
+  const col = LVL_COLOR[Math.min(tw.level, LVL_COLOR.length - 1)];
+  const g = ball(0.14, col, 0, 0, 0, 1);
+  const gm = g.material as THREE.MeshStandardMaterial;
+  gm.emissive = new THREE.Color(col); gm.emissiveIntensity = 1.6;
+  g.castShadow = false;
+  g.position.set(tw.x, 1.0, tw.z);
   fx.add(g);
-  st.projs.push({ g, x: tw.x, y: 0.86, z: tw.z, tx: target.laneOff, ty: 0.5, tz: target.z, target, dmg: tw.dmg });
+  st.projs.push({ g, x: tw.x, y: 1.0, z: tw.z, tx: target.laneOff, ty: 0.5, tz: target.z, target, dmg: tw.dmg });
 }
 
 interface Particle { m: THREE.Mesh; vx: number; vy: number; vz: number; life: number; }
 const PARTICLES: Particle[] = [];
 function splash(fx: THREE.Group, x: number, y: number, z: number) {
-  for (let i = 0; i < 5; i++) {
-    const m = ball(0.06, 0xbfe6ff, x, y, z);
+  for (let i = 0; i < 6; i++) {
+    const m = ball(0.06, 0x8fe6b8, x, y, z);
+    (m.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(0x4fae7a);
+    m.castShadow = false;
     fx.add(m);
     PARTICLES.push({
       m, vx: (Math.random() - 0.5) * 2, vy: 1.5 + Math.random() * 1.5, vz: (Math.random() - 0.5) * 2,
@@ -711,11 +804,11 @@ function makeSkyDome(): THREE.Mesh {
     new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
       uniforms: {
-        top: { value: new THREE.Color(0x7ea8d6) },   // soft periwinkle crown
-        mid: { value: new THREE.Color(0xf2ddb4) },   // warm cream band
-        bot: { value: new THREE.Color(0xf3c489) },   // peachy horizon
-        glow: { value: new THREE.Color(0xffe3a6) },  // amber sun glow
-        glowDir: { value: new THREE.Vector3(-0.5, -0.05, -0.6).normalize() },
+        top: { value: new THREE.Color(0x080b16) },   // near-black navy crown
+        mid: { value: new THREE.Color(0x161f31) },   // deep night blue
+        bot: { value: new THREE.Color(0x26302e) },   // murky grey-green horizon mist
+        glow: { value: new THREE.Color(0x8ea2c2) },  // pale cold moon glow
+        glowDir: { value: new THREE.Vector3(0.25, 0.42, -0.8).normalize() },
       },
       vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       fragmentShader: 'varying vec3 vP; uniform vec3 top; uniform vec3 mid; uniform vec3 bot; uniform vec3 glow; uniform vec3 glowDir; void main(){ vec3 n = normalize(vP); float h = n.y; vec3 c = h > 0.0 ? mix(mid, top, clamp(h*1.2,0.0,1.0)) : mix(mid, bot, clamp(-h*1.7,0.0,1.0)); float g = clamp(dot(n, glowDir), 0.0, 1.0); c = mix(c, glow, g*g*0.6); gl_FragColor = vec4(c,1.0); }',
@@ -723,21 +816,55 @@ function makeSkyDome(): THREE.Mesh {
   );
 }
 
-// ─── floating pollen / dust motes catching the warm light ────────────────────
+// ─── drifting spectral wisps / graveyard mist motes ──────────────────────────
 function makeMotes(): THREE.Points {
-  const N = 80;
+  const N = 90;
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(N * 3);
   for (let i = 0; i < N; i++) {
-    pos[i * 3] = (Math.random() * 2 - 1) * 6;
-    pos[i * 3 + 1] = Math.random() * 5 + 0.4;
-    pos[i * 3 + 2] = (Math.random() * 2 - 1) * 7 - 1;
+    pos[i * 3] = (Math.random() * 2 - 1) * 6.5;
+    pos[i * 3 + 1] = Math.random() * 3.2 + 0.15;
+    pos[i * 3 + 2] = (Math.random() * 2 - 1) * 7.5 - 1;
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   return new THREE.Points(geo, new THREE.PointsMaterial({
-    color: 0xfff0cf, size: 0.09, transparent: true, opacity: 0.6,
+    color: 0xa6c6b2, size: 0.16, transparent: true, opacity: 0.4,
     blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true, fog: false,
   }));
+}
+
+// ─── low-lying ground fog: soft translucent planes drifting over the graves ──
+function makeGroundMist(): THREE.Group {
+  const g = new THREE.Group();
+  const tex = mistTexture();
+  for (let i = 0; i < 7; i++) {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(7, 7),
+      new THREE.MeshBasicMaterial({
+        map: tex, transparent: true, opacity: 0.18, depthWrite: false,
+        color: 0x9fb0ad, blending: THREE.NormalBlending, fog: false,
+      }),
+    );
+    m.rotation.x = -Math.PI / 2;
+    m.position.set((Math.random() * 2 - 1) * 4, 0.25 + Math.random() * 0.5, (Math.random() * 2 - 1) * 6 - 1);
+    m.rotation.z = Math.random() * Math.PI;
+    (m as any).__sp = 0.12 + Math.random() * 0.16;
+    (m as any).__dir = Math.random() < 0.5 ? 1 : -1;
+    g.add(m);
+  }
+  return g;
+}
+let _mistTex: THREE.CanvasTexture | null = null;
+function mistTexture(): THREE.CanvasTexture {
+  if (_mistTex) return _mistTex;
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const ctx = c.getContext('2d')!;
+  const grd = ctx.createRadialGradient(64, 64, 8, 64, 64, 62);
+  grd.addColorStop(0, 'rgba(255,255,255,0.9)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grd; ctx.fillRect(0, 0, 128, 128);
+  _mistTex = new THREE.CanvasTexture(c);
+  return _mistTex;
 }
 
 // ─── lights — golden-hour suburb: cool sky fill + warm key (shadows) + cool rim ─
@@ -756,16 +883,18 @@ function Lights() {
   }, []);
   return (
     <>
-      <hemisphereLight args={[0xfde6c8, 0x4f6a38, 0.62]} />
-      <ambientLight intensity={0.18} />
+      <hemisphereLight args={[0x46587a, 0x10140f, 0.6]} />
+      <ambientLight intensity={0.14} />
+      {/* cold moonlight key (casts the long graveyard shadows) */}
       <directionalLight
         ref={keyRef}
-        position={[7, 13, 6]}
-        intensity={1.45}
-        color={0xffe7bd}
+        position={[5, 14, -7]}
+        intensity={1.15}
+        color={0xb6c6ea}
         castShadow
       />
-      <directionalLight position={[-8, 5, -7]} intensity={0.34} color={0x9fc9e0} />
+      {/* faint sickly-green fill from the far mist */}
+      <directionalLight position={[-7, 4, 6]} intensity={0.2} color={0x6f9a86} />
     </>
   );
 }
@@ -781,7 +910,7 @@ export default function Scene(props: Props) {
         antialias: true,
         powerPreference: 'high-performance',
         toneMapping: THREE.ACESFilmicToneMapping,
-        toneMappingExposure: 1.06,
+        toneMappingExposure: 1.0,
       }}
       camera={{ position: [9, 12, 13], zoom: 52, near: 0.1, far: 200 }}
       style={{ position: 'absolute', inset: 0, touchAction: 'none' }}
@@ -789,8 +918,8 @@ export default function Scene(props: Props) {
       <Lights />
       <World {...props} />
       <EffectComposer>
-        <Bloom mipmapBlur intensity={0.42} luminanceThreshold={0.72} luminanceSmoothing={0.18} />
-        <Vignette eskil={false} offset={0.18} darkness={0.62} />
+        <Bloom mipmapBlur intensity={0.85} luminanceThreshold={0.5} luminanceSmoothing={0.22} />
+        <Vignette eskil={false} offset={0.12} darkness={0.86} />
       </EffectComposer>
     </Canvas>
   );

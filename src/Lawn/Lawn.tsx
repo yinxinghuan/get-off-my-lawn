@@ -56,9 +56,9 @@ export function Lawn() {
         actions: [{
           type: 'notify',
           target_user_id: beaten.id,
-          image: { ref_url: POSTER_URL, prompt: 'a cartoon old man defending his green suburban lawn with sprinklers from a crowd of intruders' },
+          image: { ref_url: POSTER_URL, prompt: 'a spooky moonlit graveyard at night, a crypt defended by glowing spectral braziers against a crowd of zombies, skeletons and ghosts, fog' },
           message: {
-            template: `{sender_name} just out-defended you — ${Math.round(myScore)} repelled on Get Off My Lawn.`,
+            template: `{sender_name} out-haunted you — ${Math.round(myScore)} banished on Get Off My Grave.`,
             variables: ['sender_name'],
           },
         }],
@@ -101,7 +101,7 @@ export function Lawn() {
 
   useEffect(() => () => window.clearTimeout(bannerTimer.current), []);
 
-  const hearts = '❤'.repeat(Math.max(0, hud.lives)) + '🖤'.repeat(Math.max(0, 5 - hud.lives));
+  const hearts = '🕯️'.repeat(Math.max(0, hud.lives)) + '·'.repeat(Math.max(0, 5 - hud.lives));
 
   return (
     <div className="gol">
@@ -118,7 +118,7 @@ export function Lawn() {
         <>
           <div className="gol-hud gol-hud--top">
             <div className="gol-lives">{hearts}</div>
-            <div className="gol-cash">💵 {hud.cash}</div>
+            <div className="gol-cash">💀 {hud.cash}</div>
           </div>
           <div className="gol-hud gol-hud--wave">
             <span className="gol-wave-num">{t('wave')} {hud.wave || 1}</span>

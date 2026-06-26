@@ -10,17 +10,17 @@ let lang: Lang = detect();
 export function getLang(): Lang { return lang; }
 
 const STR: Record<string, { en: string; zh: string }> = {
-  title:      { en: 'GET OFF MY LAWN', zh: '滚出我的草坪' },
-  tapToStart: { en: 'TAP TO DEFEND',   zh: '点击开始守卫' },
-  tapPlant:   { en: 'TAP A PATCH TO PLANT A SPRINKLER', zh: '点空地放洒水器' },
-  tapUpgrade: { en: 'TAP IT AGAIN TO UPGRADE',          zh: '再点一下升级' },
-  wave:       { en: 'WAVE',  zh: '波次' },
-  score:      { en: 'REPELLED', zh: '已击退' },
+  title:      { en: 'GET OFF MY GRAVE', zh: '滚出我的墓地' },
+  tapToStart: { en: 'TAP TO DEFEND',   zh: '点击开始守墓' },
+  tapPlant:   { en: 'TAP A PLOT TO LIGHT A BRAZIER', zh: '点空地点燃招魂火' },
+  tapUpgrade: { en: 'TAP IT AGAIN TO STOKE THE FLAME', zh: '再点一下旺火' },
+  wave:       { en: 'NIGHT', zh: '夜' },
+  score:      { en: 'BANISHED', zh: '已超度' },
   best:       { en: 'BEST',  zh: '最高' },
-  gameOver:   { en: 'THEY TOOK THE LAWN', zh: '草坪失守了' },
-  again:      { en: 'DEFEND AGAIN', zh: '再守一次' },
-  leaderboard:{ en: 'LAWN LEGENDS', zh: '草坪传奇' },
-  guestbook:  { en: 'YARD TALK', zh: '院子留言' },
+  gameOver:   { en: 'THEY TOOK YOUR PLOT', zh: '墓位被抢了' },
+  again:      { en: 'RISE AGAIN', zh: '再守一次' },
+  leaderboard:{ en: 'GRAVE KEEPERS', zh: '守墓传奇' },
+  guestbook:  { en: 'EPITAPHS', zh: '墓志铭' },
   newBest:    { en: 'NEW BEST!', zh: '新纪录！' },
 };
 
