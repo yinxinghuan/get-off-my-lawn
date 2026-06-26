@@ -17,25 +17,56 @@ const UPGRADE_COST = (lvl: number) => 70 + lvl * 55;
 const TOWER_MAX_LVL = 4;
 const ENEMY_SCALE = 0.46;
 
-// Lane: a straight dirt path down the centre. Enemies walk +z toward the house.
-const SPAWN_Z = -7.2;
-const HOUSE_Z = 3.4;
-const LANE_HALF = 0.8;
-
-// Tower plots — two tidy ranks flanking the grave-path. Inner rank (close to the
-// path, 4 evenly-spaced rows) is the main defensive line; an outer rank (2 rows,
-// staggered) gives a second tier. Symmetric + aligned so it reads as a planned
-// cemetery, not scattered rings. Each plot sits on a visible stone build-pad.
-const PLOT_SPOTS: [number, number][] = [
-  // inner rank — left & right, 4 rows down the path
-  [-1.75, -4.2], [1.75, -4.2],
-  [-1.75, -1.9], [1.75, -1.9],
-  [-1.75, 0.4], [1.75, 0.4],
-  [-1.75, 2.7], [1.75, 2.7],
-  // outer rank — staggered between the inner rows
-  [-3.05, -3.05], [3.05, -3.05],
-  [-3.05, 1.55], [3.05, 1.55],
+// ── Winding grave-path: a snaking route from the gate (top) to the crypt (front).
+// A circuitous path = more fun TD (towers in the bend pockets cover several
+// segments). Enemies follow it by cumulative distance.
+const PATH: [number, number][] = [
+  [0.0, -6.9],
+  [-2.6, -4.3],
+  [2.6, -1.5],
+  [-2.3, 1.2],
+  [0.0, 3.2],
 ];
+const HOUSE_Z = PATH[PATH.length - 1][1]; // crypt sits at the path's end
+const SPAWN_Z = PATH[0][1];                // gate end (decor scatter reference)
+const LANE_HALF = 0.78;                    // perpendicular spread of enemies on the path
+
+interface PathSeg { ax: number; az: number; dx: number; dz: number; len: number; }
+const PATH_SEGS: PathSeg[] = PATH.slice(1).map((b, i) => {
+  const a = PATH[i]; const dx = b[0] - a[0], dz = b[1] - a[1];
+  const len = Math.hypot(dx, dz) || 1e-6;
+  return { ax: a[0], az: a[1], dx: dx / len, dz: dz / len, len };
+});
+const PATH_TOTAL = PATH_SEGS.reduce((s, g) => s + g.len, 0);
+/** World pose at distance d along the path: position + forward dir + left normal. */
+function posAlong(d: number) {
+  let rem = Math.max(0, d);
+  for (let i = 0; i < PATH_SEGS.length; i++) {
+    const s = PATH_SEGS[i];
+    if (rem <= s.len || i === PATH_SEGS.length - 1) {
+      const t = Math.min(rem, s.len);
+      return { x: s.ax + s.dx * t, z: s.az + s.dz * t, dx: s.dx, dz: s.dz, px: -s.dz, pz: s.dx };
+    }
+    rem -= s.len;
+  }
+  const s = PATH_SEGS[PATH_SEGS.length - 1];
+  return { x: s.ax + s.dx * s.len, z: s.az + s.dz * s.len, dx: s.dx, dz: s.dz, px: -s.dz, pz: s.dx };
+}
+
+// Tower plots flank the winding path in tidy symmetric pairs (computed from the
+// path so they always hug the curves). Each sits on a stone build-pad.
+const PLOT_SPOTS: [number, number][] = (() => {
+  const spots: [number, number][] = [];
+  for (const frac of [0.14, 0.31, 0.48, 0.65, 0.82]) {
+    const p = posAlong(frac * PATH_TOTAL);
+    for (const side of [-1, 1]) {
+      const x = p.x + p.px * side * 1.8;
+      const z = p.z + p.pz * side * 1.8;
+      if (Math.abs(x) < 4.7) spots.push([+x.toFixed(2), +z.toFixed(2)]);
+    }
+  }
+  return spots;
+})();
 
 // ─── Intruder roster — the funny lawn invaders ──────────────────────────────
 interface IntruderDef {
@@ -78,7 +109,9 @@ function poolForWave(w: number): IntruderDef[] {
 // ─── Entity types ───────────────────────────────────────────────────────────
 interface Enemy {
   g: THREE.Group; def: IntruderDef;
-  x: number; z: number; laneOff: number;
+  dist: number;            // distance travelled along the winding path
+  x: number; z: number;    // current world position (path + perp offset)
+  laneOff: number;         // perpendicular offset on the path
   hp: number; maxHp: number; spd: number;
   phase: number; dead: boolean; reached: boolean;
   slow: number; // remaining slow timer (sec)
@@ -187,16 +220,16 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
   // camera setup — orthographic iso diorama (premium clean-iso look)
   useEffect(() => {
     const cam = camera as THREE.OrthographicCamera;
-    cam.position.set(8.5, 11.5, 12.5);
-    cam.zoom = 78; cam.near = 0.1; cam.far = 200;
-    cam.lookAt(0, 0.3, -1.1);
+    cam.position.set(9.0, 12.0, 13.0);
+    cam.zoom = 58; cam.near = 0.1; cam.far = 200;   // pulled back so the whole winding path + plots read
+    cam.lookAt(0, 0.2, -1.4);
     cam.updateProjectionMatrix();
   }, [camera]);
 
   // build the static board once
   useEffect(() => {
     scene.add(makeSkyDome());
-    scene.fog = new THREE.Fog(0x141c28, 11, 30); // dense graveyard mist
+    scene.fog = new THREE.Fog(0x1e2632, 14, 36); // graveyard mist (lifted off black to kill mobile banding)
     buildBoard(root, S.current);
     const motes = makeMotes(); scene.add(motes); S.current.motes = motes;
     const mist = makeGroundMist(); scene.add(mist); S.current.mist = mist;
@@ -272,9 +305,9 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
       }
       startWave(st, onWave);
       const dbgPool = poolForWave(3);
-      [-5, -3.5, -2, -0.5, 1].forEach((z, i) => {
+      [0.12, 0.3, 0.48, 0.66, 0.84].forEach((frac, i) => {
         spawnEnemy(root, st, dbgPool[i % dbgPool.length]);
-        st.enemies[st.enemies.length - 1].z = z;
+        st.enemies[st.enemies.length - 1].dist = frac * PATH_TOTAL;
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -353,15 +386,19 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
       }
     }
 
-    // ── enemies march ──
+    // ── enemies march along the winding path ──
     for (const en of st.enemies) {
       if (en.dead) continue;
       let spd = en.spd;
       if (en.slow > 0) { en.slow -= dt; spd *= 0.5; }
-      en.z += spd * dt;
+      en.dist += spd * dt;
       en.phase += dt * spd * 3.2;
-      const gx = en.laneOff;
-      en.g.position.set(gx, 0, en.z);
+      const p = posAlong(en.dist);
+      en.x = p.x + p.px * en.laneOff;
+      en.z = p.z + p.pz * en.laneOff;
+      const bob = en.def.legs ? Math.abs(Math.sin(en.phase)) * 0.04 : Math.abs(Math.sin(en.phase)) * 0.09;
+      en.g.position.set(en.x, bob, en.z);
+      en.g.rotation.y = Math.atan2(p.dx, p.dz); // face along the path
       // walk anim
       if (en.def.legs) {
         const rig = rigOf(en.g);
@@ -370,13 +407,10 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
         if (rig?.legR) rig.legR.rotation.x = -sw;
         if (rig?.armL) rig.armL.rotation.x = -sw * 0.7;
         if (rig?.armR) rig.armR.rotation.x = sw * 0.7;
-        en.g.position.y = Math.abs(Math.sin(en.phase)) * 0.04;
-      } else {
-        en.g.position.y = Math.abs(Math.sin(en.phase)) * 0.09;
       }
-      if (en.hpBar) en.hpBar.position.set(gx, 1.5 * en.def.scale * ENEMY_SCALE + 0.9, en.z);
-      // reached the house
-      if (en.z >= HOUSE_Z) {
+      if (en.hpBar) en.hpBar.position.set(en.x, 1.5 * en.def.scale * ENEMY_SCALE + 0.9, en.z);
+      // reached the crypt
+      if (en.dist >= PATH_TOTAL) {
         en.reached = true; en.dead = true;
         if (isAttract) { continue; } // demo: harmless, no life loss
         st.lives -= 1; st.houseFlash = 0.5; sfx.reachHouse();
@@ -391,15 +425,15 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
       // brazier flame flicker → restless pool of light
       tw.flicker += dt * 11;
       if (tw.light) tw.light.intensity = (5 + tw.level * 1.6) * (0.78 + 0.22 * Math.sin(tw.flicker) + 0.08 * Math.sin(tw.flicker * 2.7));
-      // find nearest live enemy in range (prefer most advanced = highest z)
-      let best: Enemy | null = null; let bestZ = -Infinity;
+      // in-range enemy that is furthest along the path (closest to the crypt)
+      let best: Enemy | null = null; let bestD = -Infinity;
       for (const en of st.enemies) {
         if (en.dead) continue;
-        const dx = en.laneOff - tw.x, dz = en.z - tw.z;
-        if (dx * dx + dz * dz <= tw.range * tw.range && en.z > bestZ) { best = en; bestZ = en.z; }
+        const dx = en.x - tw.x, dz = en.z - tw.z;
+        if (dx * dx + dz * dz <= tw.range * tw.range && en.dist > bestD) { best = en; bestD = en.dist; }
       }
       if (best) {
-        const desired = Math.atan2(best.laneOff - tw.x, best.z - tw.z);
+        const desired = Math.atan2(best.x - tw.x, best.z - tw.z);
         tw.yaw += angDelta(tw.yaw, desired) * Math.min(1, dt * 12);
         tw.head.rotation.y = tw.yaw;
         if (tw.cd <= 0) {
@@ -413,7 +447,7 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
     // ── projectiles ──
     for (const pr of st.projs) {
       const en = pr.target;
-      if (!en.dead) { pr.tx = en.laneOff; pr.tz = en.z; pr.ty = 0.5; }
+      if (!en.dead) { pr.tx = en.x; pr.tz = en.z; pr.ty = 0.5; }
       const dx = pr.tx - pr.x, dy = pr.ty - pr.y, dz = pr.tz - pr.z;
       const d = Math.hypot(dx, dy, dz);
       const step = 16 * dt;
@@ -466,20 +500,32 @@ function buildBoard(root: THREE.Group, st: any) {
     flatify(moss, { cast: false, receive: true }); root.add(moss);
   }
 
-  // cobbled grave-path down the lane (dark earth + mossy stone edging)
-  const pathLen = (HOUSE_Z + 1.0) - (SPAWN_Z - 0.2);
-  const pathMid = (SPAWN_Z - 0.2 + HOUSE_Z + 1.0) / 2;
-  const dirt = box(1.8, 0.16, pathLen, 0x39342c, 0, 0.06, pathMid);
-  flatify(dirt, { cast: false, receive: true }); root.add(dirt);
-  for (const sx of [-1, 1]) {
-    const edge = box(0.16, 0.22, pathLen, 0x565d4b, sx * 0.92, 0.1, pathMid);
-    flatify(edge, { cast: false, receive: true }); root.add(edge);
+  // winding cobbled grave-path — a lit dirt band per segment + bend-fills, with
+  // pale stone edging so the route reads clearly against the dark ground
+  for (const s of PATH_SEGS) {
+    const midx = s.ax + s.dx * s.len / 2, midz = s.az + s.dz * s.len / 2;
+    const band = box(1.78, 0.16, s.len + 0.6, 0x564a3a, midx, 0.06, midz);
+    band.rotation.y = Math.atan2(s.dx, s.dz);
+    flatify(band, { cast: false, receive: true }); root.add(band);
   }
-  for (let k = 0; k < 10; k++) {                    // cobblestones
-    const cx = ((k * 3.1) % 1.2) - 0.6;
-    const cz = SPAWN_Z + 0.4 + k * 1.1;
-    const stone = box(0.46, 0.06, 0.4, k % 2 ? 0x4a4d42 : 0x55594c, cx, 0.14, cz);
+  for (let i = 1; i < PATH.length - 1; i++) {        // fill the bend joints
+    const fill = box(1.82, 0.16, 1.82, 0x564a3a, PATH[i][0], 0.058, PATH[i][1]);
+    flatify(fill, { cast: false, receive: true }); root.add(fill);
+  }
+  for (let d = 0.3; d < PATH_TOTAL; d += 0.5) {       // cobbles + pale edging
+    const p = posAlong(d);
+    const off = ((d * 1.7) % 1.0) - 0.5;
+    const cx = p.x + p.px * off, cz = p.z + p.pz * off;
+    const stone = box(0.42, 0.06, 0.36, (d | 0) % 2 ? 0x6b6e5d : 0x787b69, cx, 0.15, cz);
+    stone.rotation.y = Math.atan2(p.dx, p.dz);
     flatify(stone, { cast: false, receive: true }); root.add(stone);
+    // pale kerb stones on both edges
+    for (const side of [-1, 1]) {
+      const ex = p.x + p.px * side * 0.92, ez = p.z + p.pz * side * 0.92;
+      const kerb = box(0.2, 0.14, 0.34, 0x7d8270, ex, 0.1, ez);
+      kerb.rotation.y = Math.atan2(p.dx, p.dz);
+      flatify(kerb, { cast: false, receive: true }); root.add(kerb);
+    }
   }
 
   // dead-grass tufts beside the path
@@ -563,10 +609,10 @@ function buildBoard(root: THREE.Group, st: any) {
 function makePad(x: number, z: number): THREE.Group {
   const g = new THREE.Group();
   g.position.set(x, 0, z);
-  g.add(flatify(box(0.92, 0.12, 0.92, 0x3c4138, 0, 0.06, 0), { cast: false, receive: true }));
-  g.add(flatify(box(0.78, 0.1, 0.78, 0x4a5044, 0, 0.13, 0), { cast: false, receive: true }));
+  g.add(flatify(box(0.92, 0.12, 0.92, 0x4e554a, 0, 0.06, 0), { cast: false, receive: true }));
+  g.add(flatify(box(0.78, 0.1, 0.78, 0x646b5b, 0, 0.13, 0), { cast: false, receive: true }));
   // a touch of moss on two corners
-  g.add(flatify(box(0.3, 0.03, 0.22, 0x3a4a30, -0.22, 0.19, 0.2), { cast: false, receive: true }));
+  g.add(flatify(box(0.3, 0.03, 0.22, 0x47592f, -0.22, 0.19, 0.2), { cast: false, receive: true }));
   return g;
 }
 
@@ -714,17 +760,17 @@ function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
   g.scale.setScalar(s);
   flatify(g);
   const laneOff = (Math.random() - 0.5) * (LANE_HALF * 1.5);
-  g.position.set(laneOff, 0, SPAWN_Z);
-  // characters face +Z by default; quadruped animals face +X → rotate to +Z
-  g.rotation.y = def.legs ? 0 : -Math.PI / 2;
+  const p = posAlong(0);
+  const x = p.x + p.px * laneOff, z = p.z + p.pz * laneOff;
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.atan2(p.dx, p.dz); // face along the path
   root.add(g);
   const hpBar = makeHpBar();
   drawHpBar(hpBar, 1);
-  // hpBar added to fx layer so it renders over geometry
   st.fxLayer.add(hpBar);
   const hpScaled = Math.round(def.hp * (1 + st.wave * 0.12));
   const en: Enemy = {
-    g, def, x: laneOff, z: SPAWN_Z, laneOff,
+    g, def, dist: 0, x, z, laneOff,
     hp: hpScaled, maxHp: hpScaled, spd: def.spd, phase: Math.random() * 6,
     dead: false, reached: false, slow: 0, hpBar,
   };
@@ -748,7 +794,7 @@ function fireWater(fx: THREE.Group, st: any, tw: Tower, target: Enemy) {
   g.castShadow = false;
   g.position.set(tw.x, 1.0, tw.z);
   fx.add(g);
-  st.projs.push({ g, x: tw.x, y: 1.0, z: tw.z, tx: target.laneOff, ty: 0.5, tz: target.z, target, dmg: tw.dmg });
+  st.projs.push({ g, x: tw.x, y: 1.0, z: tw.z, tx: target.x, ty: 0.5, tz: target.z, target, dmg: tw.dmg });
 }
 
 interface Particle { m: THREE.Mesh; vx: number; vy: number; vz: number; life: number; }
@@ -860,9 +906,9 @@ function makeSkyDome(): THREE.Mesh {
     new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
       uniforms: {
-        top: { value: new THREE.Color(0x080b16) },   // near-black navy crown
-        mid: { value: new THREE.Color(0x161f31) },   // deep night blue
-        bot: { value: new THREE.Color(0x26302e) },   // murky grey-green horizon mist
+        top: { value: new THREE.Color(0x12161f) },   // lifted navy crown (off near-black → no mobile banding)
+        mid: { value: new THREE.Color(0x1d2738) },   // deep night blue
+        bot: { value: new THREE.Color(0x2d3736) },   // murky grey-green horizon mist
         glow: { value: new THREE.Color(0x8ea2c2) },  // pale cold moon glow
         glowDir: { value: new THREE.Vector3(0.25, 0.42, -0.8).normalize() },
       },
@@ -939,8 +985,8 @@ function Lights() {
   }, []);
   return (
     <>
-      <hemisphereLight args={[0x46587a, 0x10140f, 0.6]} />
-      <ambientLight intensity={0.14} />
+      <hemisphereLight args={[0x52638a, 0x161a14, 0.66]} />
+      <ambientLight intensity={0.2} />
       {/* cold moonlight key (casts the long graveyard shadows) */}
       <directionalLight
         ref={keyRef}
@@ -974,8 +1020,10 @@ export default function Scene(props: Props) {
       <Lights />
       <World {...props} />
       <EffectComposer>
-        <Bloom mipmapBlur intensity={0.85} luminanceThreshold={0.5} luminanceSmoothing={0.22} />
-        <Vignette eskil={false} offset={0.12} darkness={0.86} />
+        {/* no mipmapBlur — it produces rainbow chroma noise in dark areas on mobile
+            half-float buffers. Higher threshold keeps the dark ground out of bloom. */}
+        <Bloom intensity={0.7} luminanceThreshold={0.62} luminanceSmoothing={0.25} />
+        <Vignette eskil={false} offset={0.2} darkness={0.62} />
       </EffectComposer>
     </Canvas>
   );
