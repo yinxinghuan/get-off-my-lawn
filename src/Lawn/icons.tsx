@@ -46,6 +46,14 @@ export function Sound({ on, size = 20 }: { on: boolean; size?: number }) {
   );
 }
 
+export function Finger({ size = 46 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 48 48" width={size} height={size} className="gol-ico" aria-hidden>
+      <path d="M22 6.5c1.7 0 3 1.4 3 3v12.3l3.4-1c2.9-.9 5.9.4 7.3 3l3.1 5.7c.9 1.7.9 3.7-.1 5.3l-2.6 4.4c-1 1.6-2.7 2.6-4.6 2.6H24c-2.1 0-4-1.1-5.1-2.9l-6.4-10.6c-.9-1.6-.4-3.6 1.1-4.6 1.3-.8 3-.6 4 .5l1.4 1.5V9.5c0-1.6 1.3-3 3-3z" fill="#fff" stroke="#0c1414" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function Tomb({ size = 18 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>

@@ -3,11 +3,12 @@ import Scene, { type HudState } from './Scene';
 import { Leaderboard, useGameScore } from '@shared/leaderboard';
 import { useGameEvent, telegramId } from '@shared/runtime';
 import { unlockAudio, setMuted, isMuted } from './audio';
-import { Candle, Skull, Sound, Tomb } from './icons';
+import { Candle, Skull, Sound, Tomb, Finger } from './icons';
 import { t } from './i18n';
 import './Lawn.less';
 
 const POSTER_URL = 'https://yinxinghuan.github.io/games/posters/get-off-my-lawn.png';
+const TOWER_COST = 90;
 
 type Phase = 'attract' | 'playing' | 'over';
 const BEST_KEY = 'gol_best';
@@ -16,12 +17,13 @@ export function Lawn() {
   const [phase, setPhase] = useState<Phase>(
     typeof location !== 'undefined' && location.search.includes('debug') ? 'playing' : 'attract',
   );
-  const [hud, setHud] = useState<HudState>({ lives: 5, cash: 175, score: 0, wave: 0 });
+  const [hud, setHud] = useState<HudState>({ lives: 5, cash: 175, score: 0, wave: 0, towers: 0 });
   const [waveBanner, setWaveBanner] = useState<number | null>(null);
   const [best, setBest] = useState<number>(() => Number(localStorage.getItem(BEST_KEY) || 0));
   const [showBoard, setShowBoard] = useState(false);
   const [muted, setMutedState] = useState(isMuted());
-  const [hintOn, setHintOn] = useState(false);
+  const [upgradeHint, setUpgradeHint] = useState(false);
+  const prevTowers = useRef(0);
 
   const restartRef = useRef<() => void>(() => {});
   const bannerTimer = useRef<number | undefined>(undefined);
@@ -86,21 +88,22 @@ export function Lawn() {
   }, [submitScore, sendBeatNotify]);
   const registerRestart = useCallback((fn: () => void) => { restartRef.current = fn; }, []);
 
-  const startGame = () => {
-    unlockAudio();
-    setPhase('playing');   // Scene resets the board on the play transition
-    setHintOn(true);
-    window.setTimeout(() => setHintOn(false), 3600);
-  };
-  const again = () => {
-    // over -> play is a mode change, so Scene's play-effect re-fires the reset
-    setPhase('playing');
-    setHintOn(true);
-    window.setTimeout(() => setHintOn(false), 3000);
-  };
+  const startGame = () => { unlockAudio(); prevTowers.current = 0; setPhase('playing'); };
+  const again = () => { prevTowers.current = 0; setPhase('playing'); };
   const toggleMute = () => { const m = !muted; setMuted(m); setMutedState(m); };
 
   useEffect(() => () => window.clearTimeout(bannerTimer.current), []);
+
+  // when the first brazier goes down, flash a one-time "tap to upgrade" hint
+  useEffect(() => {
+    if (prevTowers.current === 0 && hud.towers === 1) {
+      setUpgradeHint(true);
+      const id = window.setTimeout(() => setUpgradeHint(false), 3600);
+      prevTowers.current = hud.towers;
+      return () => window.clearTimeout(id);
+    }
+    prevTowers.current = hud.towers;
+  }, [hud.towers]);
 
   return (
     <div className="gol">
@@ -123,7 +126,22 @@ export function Lawn() {
             <span className="gol-chip"><b>{t('wave')}</b> {hud.wave || 1}</span>
             <span className="gol-chip gol-chip--score">{hud.score} <b>{t('score')}</b></span>
           </div>
-          {hintOn && <div className="gol-hint">{t('tapPlant')}</div>}
+
+          {/* build guide — persists until the first brazier is placed; tells when + how */}
+          {hud.towers === 0 && (
+            <div className="gol-guide">
+              <div className="gol-finger"><Finger /></div>
+              {hud.cash >= TOWER_COST ? (
+                <div className="gol-guide-txt">
+                  <b>{t('guideBuild')}</b>
+                  <span>{t('guideBuildSub')} · {TOWER_COST} {t('souls')}</span>
+                </div>
+              ) : (
+                <div className="gol-guide-txt"><b>{t('guideEarn')}</b></div>
+              )}
+            </div>
+          )}
+          {upgradeHint && <div className="gol-hint">{t('tapUpgrade')}</div>}
         </>
       )}
 

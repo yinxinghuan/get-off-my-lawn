@@ -123,10 +123,10 @@ interface Tower {
   range: number; dmg: number; rate: number; cd: number; yaw: number;
   light?: THREE.PointLight; flicker: number;
 }
-interface Plot { x: number; z: number; disc: THREE.Mesh; marker: THREE.Group; tower: Tower | null; }
+interface Plot { x: number; z: number; disc: THREE.Mesh; marker: THREE.Group; ring: THREE.Mesh; ghost: THREE.Group; tower: Tower | null; }
 interface Proj { g: THREE.Mesh; x: number; y: number; z: number; tx: number; ty: number; tz: number; target: Enemy; dmg: number; }
 
-export interface HudState { lives: number; cash: number; score: number; wave: number; }
+export interface HudState { lives: number; cash: number; score: number; wave: number; towers: number; }
 export interface SceneHandle { restart: () => void; }
 
 type Mode = 'attract' | 'play' | 'over';
@@ -210,7 +210,7 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
     waveBreak: 1.2, betweenWaves: true, demoReady: false, attractT: 0,
     houseGroup: null as THREE.Group | null, houseFlash: 0,
     over: false, time: 0,
-    lastHud: { lives: -1, cash: -1, score: -1, wave: -1 } as HudState,
+    lastHud: { lives: -1, cash: -1, score: -1, wave: -1, towers: -1 } as HudState,
     fxLayer: fx as THREE.Group,
     onHud: onHud as (h: HudState) => void,
     motes: null as THREE.Points | null,
@@ -229,7 +229,7 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
   // build the static board once
   useEffect(() => {
     scene.add(makeSkyDome());
-    scene.fog = new THREE.Fog(0x1e2632, 14, 36); // graveyard mist (lifted off black to kill mobile banding)
+    scene.fog = new THREE.Fog(0x26303c, 22, 60); // lighter graveyard haze (pushed back so the board reads)
     buildBoard(root, S.current);
     const motes = makeMotes(); scene.add(motes); S.current.motes = motes;
     const mist = makeGroundMist(); scene.add(mist); S.current.mist = mist;
@@ -329,14 +329,24 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
       }
     }
 
-    // idle bob of plot markers (attract attention to affordable spots)
+    // build sockets: bright glowing ring + floating ghost flame when affordable,
+    // dim when you can't yet pay — so "when you can build" reads at a glance
     for (const p of st.plots) {
-      if (p.tower) continue;
+      if (p.tower) { p.marker.visible = false; continue; }
       const aff = st.cash >= TOWER_COST;
       p.marker.visible = true;
-      const pulse = 1 + Math.sin(st.time * 3 + p.x) * 0.12;
-      p.marker.scale.setScalar(aff ? pulse : 0.85);
-      (p.marker.children[0] as THREE.Mesh).visible = aff;
+      const rm = p.ring.material as THREE.MeshBasicMaterial;
+      if (aff) {
+        const pulse = 0.6 + Math.sin(st.time * 3.2 + p.x) * 0.28;
+        rm.color.setHex(0x7fe6b4); rm.opacity = pulse;
+        p.ring.scale.setScalar(1 + Math.sin(st.time * 3.2 + p.x) * 0.06);
+        p.ghost.visible = true;
+        p.ghost.position.y = Math.sin(st.time * 2 + p.x) * 0.07;
+      } else {
+        rm.color.setHex(0x5a6b62); rm.opacity = 0.22;
+        p.ring.scale.setScalar(0.9);
+        p.ghost.visible = false;
+      }
     }
 
     if (st.houseFlash > 0 && st.houseGroup) {
@@ -487,16 +497,15 @@ function World({ mode, onHud, onWave, onGameOver, registerRestart }: Props) {
 
 // ─── board construction ─────────────────────────────────────────────────────
 function buildBoard(root: THREE.Group, st: any) {
-  // dark mossy graveyard ground (receives the long moonlight shadows)
-  const base = box(11, 0.4, 16, 0x36402f, 0, -0.2, -1.5);
+  // dark mossy graveyard ground — extends well past the frame so no island edge
+  // shows; the far reaches fade into the fog
+  const base = box(46, 0.5, 52, 0x36402f, 0, -0.25, -3);
   flatify(base, { cast: false, receive: true }); root.add(base);
-  const rim = box(11.6, 0.3, 16.6, 0x201b15, 0, -0.42, -1.5);
-  flatify(rim, { cast: false, receive: true }); root.add(rim);
-  // mossy darker blotches on the ground for texture
-  for (let k = 0; k < 16; k++) {
-    const mx = ((k * 4.7) % 9) - 4.5, mz = SPAWN_Z + ((k * 2.3) % 13);
-    if (Math.abs(mx) < 1.2) continue;
-    const moss = box(0.7 + (k % 3) * 0.3, 0.02, 0.6 + (k % 2) * 0.4, k % 2 ? 0x2c3626 : 0x3f4a33, mx, 0.02, mz);
+  // mossy darker blotches scattered across the visible ground for texture
+  for (let k = 0; k < 30; k++) {
+    const mx = ((k * 4.7) % 13) - 6.5, mz = SPAWN_Z - 1 + ((k * 2.3) % 16);
+    if (Math.abs(mx) < 1.2 && mz < HOUSE_Z) continue; // keep the path clear
+    const moss = box(0.7 + (k % 3) * 0.4, 0.02, 0.6 + (k % 2) * 0.5, k % 2 ? 0x2c3626 : 0x3f4a33, mx, 0.02, mz);
     flatify(moss, { cast: false, receive: true }); root.add(moss);
   }
 
@@ -512,19 +521,23 @@ function buildBoard(root: THREE.Group, st: any) {
     const fill = box(1.82, 0.16, 1.82, 0x564a3a, PATH[i][0], 0.058, PATH[i][1]);
     flatify(fill, { cast: false, receive: true }); root.add(fill);
   }
-  for (let d = 0.3; d < PATH_TOTAL; d += 0.5) {       // cobbles + pale edging
+  for (let d = 0.3; d < PATH_TOTAL; d += 0.5) {       // cobbles + glowing kerb edging
     const p = posAlong(d);
     const off = ((d * 1.7) % 1.0) - 0.5;
     const cx = p.x + p.px * off, cz = p.z + p.pz * off;
-    const stone = box(0.42, 0.06, 0.36, (d | 0) % 2 ? 0x6b6e5d : 0x787b69, cx, 0.15, cz);
+    const stone = box(0.42, 0.06, 0.36, (d | 0) % 2 ? 0x7a7d6a : 0x888b77, cx, 0.16, cz);
     stone.rotation.y = Math.atan2(p.dx, p.dz);
     flatify(stone, { cast: false, receive: true }); root.add(stone);
-    // pale kerb stones on both edges
+    // pale kerb stones on both edges, with a faint spectral glow cap → the winding
+    // route is outlined by a soft green line that reads clearly in the dark
     for (const side of [-1, 1]) {
-      const ex = p.x + p.px * side * 0.92, ez = p.z + p.pz * side * 0.92;
-      const kerb = box(0.2, 0.14, 0.34, 0x7d8270, ex, 0.1, ez);
+      const ex = p.x + p.px * side * 0.94, ez = p.z + p.pz * side * 0.94;
+      const kerb = box(0.2, 0.16, 0.34, 0x868b76, ex, 0.1, ez);
       kerb.rotation.y = Math.atan2(p.dx, p.dz);
       flatify(kerb, { cast: false, receive: true }); root.add(kerb);
+      const glow = box(0.12, 0.04, 0.34, 0x6fe0a8, ex, 0.2, ez, { e: 0x4fc88c, ei: 0.7 });
+      glow.rotation.y = Math.atan2(p.dx, p.dz); glow.castShadow = false; glow.receiveShadow = false;
+      root.add(glow);
     }
   }
 
@@ -688,20 +701,31 @@ function makePlot(x: number, z: number): Plot {
   );
   disc.rotation.x = -Math.PI / 2; disc.position.set(x, 0.05, z);
 
-  // visible marker: dashed ring + a small "+"
+  // build-socket marker: a glowing spectral ring on the pad + a floating ghost
+  // brazier-flame preview (shown only when affordable → "a brazier goes here").
   const marker = new THREE.Group();
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(0.34, 0.46, 20),
-    new THREE.MeshBasicMaterial({ color: 0x9fe0c0, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
-  );
-  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06;
-  const plus = new THREE.Group();
-  const c = 0x8fe6b8;
-  plus.add(box(0.26, 0.05, 0.08, c, 0, 0.12, 0));
-  plus.add(box(0.08, 0.05, 0.26, c, 0, 0.12, 0));
-  marker.add(plus); marker.add(ring);
   marker.position.set(x, 0, z);
-  return { x, z, disc, marker, tower: null };
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.36, 0.52, 28),
+    new THREE.MeshBasicMaterial({ color: 0x7fe6b4, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+  );
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.22;
+  marker.add(ring);
+
+  const ghost = new THREE.Group();
+  const beam = box(0.05, 0.62, 0.05, 0x7fe6b4, 0, 0.46, 0, { e: 0x4fc88c, ei: 0.5 });
+  (beam.material as THREE.MeshStandardMaterial).transparent = true;
+  (beam.material as THREE.MeshStandardMaterial).opacity = 0.5; beam.castShadow = false;
+  ghost.add(beam);
+  const orb = ball(0.17, 0x8ff0c4, 0, 0.84, 0, 1);
+  const om = orb.material as THREE.MeshStandardMaterial;
+  om.emissive = new THREE.Color(0x6fe0a8); om.emissiveIntensity = 1.1;
+  om.transparent = true; om.opacity = 0.78; orb.castShadow = false;
+  ghost.add(orb);
+  marker.add(ghost);
+
+  return { x, z, disc, marker, ring, ghost, tower: null };
 }
 
 // ─── towers ─────────────────────────────────────────────────────────────────
@@ -869,8 +893,9 @@ function startWave(st: any, onWave: (w: number) => void) {
 }
 function pushHud(st: any) {
   const last = st.lastHud;
-  if (last.lives !== st.lives || last.cash !== st.cash || last.score !== st.score || last.wave !== st.wave) {
-    st.lastHud = { lives: st.lives, cash: st.cash, score: st.score, wave: st.wave };
+  const towers = st.towers.length;
+  if (last.lives !== st.lives || last.cash !== st.cash || last.score !== st.score || last.wave !== st.wave || last.towers !== towers) {
+    st.lastHud = { lives: st.lives, cash: st.cash, score: st.score, wave: st.wave, towers };
     st.onHud?.(st.lastHud);
   }
 }
@@ -888,7 +913,7 @@ function resetGame(root: THREE.Group, fx: THREE.Group, st: any, onHud: (h: HudSt
   st.lives = START_LIVES; st.cash = START_CASH; st.score = 0; st.wave = 0;
   st.spawnQ = []; st.betweenWaves = true; st.waveBreak = 1.4; st.over = false;
   st.demoReady = false; st.attractT = 0;
-  st.lastHud = { lives: -1, cash: -1, score: -1, wave: -1 };
+  st.lastHud = { lives: -1, cash: -1, score: -1, wave: -1, towers: -1 };
   st.onHud = onHud;
   pushHud(st);
 }
@@ -939,11 +964,11 @@ function makeMotes(): THREE.Points {
 function makeGroundMist(): THREE.Group {
   const g = new THREE.Group();
   const tex = mistTexture();
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 5; i++) {
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(7, 7),
       new THREE.MeshBasicMaterial({
-        map: tex, transparent: true, opacity: 0.18, depthWrite: false,
+        map: tex, transparent: true, opacity: 0.1, depthWrite: false,
         color: 0x9fb0ad, blending: THREE.NormalBlending, fog: false,
       }),
     );
