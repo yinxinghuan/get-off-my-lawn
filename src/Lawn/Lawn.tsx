@@ -3,6 +3,7 @@ import Scene, { type HudState } from './Scene';
 import { Leaderboard, useGameScore } from '@shared/leaderboard';
 import { useGameEvent, telegramId } from '@shared/runtime';
 import { unlockAudio, setMuted, isMuted } from './audio';
+import { Candle, Skull, Sound, Tomb } from './icons';
 import { t } from './i18n';
 import './Lawn.less';
 
@@ -101,8 +102,6 @@ export function Lawn() {
 
   useEffect(() => () => window.clearTimeout(bannerTimer.current), []);
 
-  const hearts = '🕯️'.repeat(Math.max(0, hud.lives)) + '·'.repeat(Math.max(0, 5 - hud.lives));
-
   return (
     <div className="gol">
       <Scene
@@ -116,13 +115,13 @@ export function Lawn() {
       {/* ── playing HUD ── */}
       {phase === 'playing' && (
         <>
-          <div className="gol-hud gol-hud--top">
-            <div className="gol-lives">{hearts}</div>
-            <div className="gol-cash">💀 {hud.cash}</div>
+          <div className="gol-hud gol-lives">
+            {[0, 1, 2, 3, 4].map((i) => <Candle key={i} lit={i < hud.lives} />)}
           </div>
-          <div className="gol-hud gol-hud--wave">
-            <span className="gol-wave-num">{t('wave')} {hud.wave || 1}</span>
-            <span className="gol-repelled">{hud.score} {t('score')}</span>
+          <div className="gol-hud gol-souls"><Skull /> {hud.cash}</div>
+          <div className="gol-hud gol-meta">
+            <span className="gol-chip"><b>{t('wave')}</b> {hud.wave || 1}</span>
+            <span className="gol-chip gol-chip--score">{hud.score} <b>{t('score')}</b></span>
           </div>
           {hintOn && <div className="gol-hint">{t('tapPlant')}</div>}
         </>
@@ -135,31 +134,44 @@ export function Lawn() {
       {/* ── attract ── */}
       {phase === 'attract' && (
         <div className="gol-overlay" onPointerDown={startGame}>
-          <div className="gol-title">{t('title')}</div>
-          <div className="gol-sub">{t('tapPlant')}</div>
+          <div className="gol-wordmark">
+            <span className="wm">Get Off<br />My Grave</span>
+            <span className="sub">{t('tapPlant')}</span>
+          </div>
           <div className="gol-cta">{t('tapToStart')}</div>
         </div>
       )}
 
       {/* ── game over ── */}
       {phase === 'over' && (
-        <div className="gol-overlay gol-overlay--over">
-          <div className="gol-gameover">{t('gameOver')}</div>
-          <div className="gol-finalwrap">
-            <div className="gol-final">{finalScore.current}</div>
-            <div className="gol-finallabel">{t('score')}</div>
+        <div className="gol-overlay">
+          <div className="gol-card">
+            <div className="gol-kicker">{t('gameOver')}</div>
+            <div className="gol-overttl">{t('title')}</div>
+            <div className="gol-stats">
+              <div className="gol-stat">
+                <span className="k">{t('score')}</span>
+                <span className="v">{finalScore.current}</span>
+              </div>
+              <div className="gol-stat gol-stat--best">
+                <span className="k">{t('best')}</span>
+                <span className="v">{best}</span>
+              </div>
+            </div>
+            {newBest.current && <div className="gol-newbest">{t('newBest')}</div>}
+            <div className="gol-btns">
+              <button className="gol-btn gol-btn--primary" onPointerDown={again}>{t('again')}</button>
+              {isInAigram && (
+                <button className="gol-btn gol-btn--ghost" onPointerDown={() => setShowBoard(true)}>
+                  <Tomb /> {t('leaderboard')}
+                </button>
+              )}
+            </div>
           </div>
-          {newBest.current
-            ? <div className="gol-newbest">{t('newBest')}</div>
-            : <div className="gol-best">{t('best')} {best}</div>}
-          <button className="gol-btn gol-btn--primary" onPointerDown={again}>{t('again')}</button>
-          {isInAigram && (
-            <button className="gol-btn" onPointerDown={() => setShowBoard(true)}>🏆 {t('leaderboard')}</button>
-          )}
         </div>
       )}
 
-      <button className="gol-mute" onPointerDown={toggleMute}>{muted ? '🔇' : '🔊'}</button>
+      <button className="gol-mute" onPointerDown={toggleMute}><Sound on={!muted} /></button>
 
       {showBoard && (
         <Leaderboard
