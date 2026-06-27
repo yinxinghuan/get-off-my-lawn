@@ -10,10 +10,9 @@ import {
 import { sfx } from './audio';
 
 // ─── Tuning ────────────────────────────────────────────────────────────────
-const START_CASH = 175;
+const START_CASH = 180;
 const START_LIVES = 5;
-const TOWER_COST = 90;
-const UPGRADE_COST = (lvl: number) => 70 + lvl * 55;
+const UPGRADE_COST = (lvl: number) => 55 + lvl * 45; // L1→2:100, →3:145, →4:190 (cheaper, so upgrading competes with new towers)
 const TOWER_MAX_LVL = 4;
 const ENEMY_SCALE = 0.46;
 
@@ -879,7 +878,7 @@ export const TOWER_TYPES: TowerType[] = [
   // fast cheap single-target DPS — Ember
   { id: 'brazier', name: 'Fire Cannon', cost: 80, color: 0xff8a3c, range: 2.7, dmg: 7, rate: 3.0, slow: 0.2, splash: 0, chillR: 0, head: 'flame', blurb: 'Rapid fireballs' },
   // control: low damage, strong slow + chills a small area — Frost
-  { id: 'frost', name: 'Frost Lance', cost: 110, color: 0x8fe0ff, range: 2.7, dmg: 4, rate: 1.1, slow: 2.4, splash: 0, chillR: 1.2, head: 'crystal', blurb: 'Slows & chills' },
+  { id: 'frost', name: 'Frost Lance', cost: 110, color: 0x8fe0ff, range: 2.7, dmg: 5, rate: 1.2, slow: 2.4, splash: 0, chillR: 1.2, head: 'crystal', blurb: 'Slows & chills' },
   // heavy slow-firing artillery: lobbed AoE blast — Haunt
   { id: 'mortar', name: 'Bone Mortar', cost: 160, color: 0xc79bf0, range: 3.3, dmg: 22, rate: 0.55, slow: 0.3, splash: 1.5, chillR: 0, head: 'mortar', blurb: 'Lobbed splash blast' },
 ];
@@ -1071,7 +1070,8 @@ function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
   const hpBar = makeHpBar();
   drawHpBar(hpBar, 1);
   st.fxLayer.add(hpBar);
-  const hpScaled = Math.round(def.hp * (1 + st.wave * 0.12));
+  // gentle early ramp + a steeper quadratic tail so late waves stay threatening
+  const hpScaled = Math.round(def.hp * (1 + st.wave * 0.11 + st.wave * st.wave * 0.004));
   const en: Enemy = {
     g, def, dist: 0, x, z, laneOff,
     hp: hpScaled, maxHp: hpScaled, spd: def.spd, phase: Math.random() * 6,
@@ -1282,7 +1282,7 @@ function resetGame(root: THREE.Group, fx: THREE.Group, st: any, onHud: (h: HudSt
   st.enemies = []; st.towers = []; st.projs = [];
   for (const p of st.plots) { p.tower = null; p.marker.visible = true; }
   st.lives = START_LIVES; st.cash = START_CASH; st.score = 0; st.wave = 0;
-  st.spawnQ = []; st.betweenWaves = true; st.waveBreak = 1.4; st.over = false;
+  st.spawnQ = []; st.betweenWaves = true; st.waveBreak = 3.5; st.over = false; // longer first breather to place a tower
   st.demoReady = false; st.attractT = 0;
   st.lastHud = { lives: -1, cash: -1, score: -1, wave: -1, towers: -1 };
   st.onHud = onHud;
