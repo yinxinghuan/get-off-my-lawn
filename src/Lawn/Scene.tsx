@@ -497,12 +497,6 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
         continue;
       }
       if (en.dead) continue;
-      // damage flinch — white flash + brief freeze (hit-stop)
-      if (en.hitFlash > 0) {
-        en.hitFlash -= dt;
-        setEmissiveAll(en.g, Math.max(0, en.hitFlash / 0.15) * 0.22); // very subtle white tick, not a white-out
-        en.flashOn = true;
-      } else if (en.flashOn) { setEmissiveAll(en.g, 0); en.flashOn = false; }
       let spd = en.spd;
       if (en.slow > 0) { en.slow -= dt; spd *= 0.5; }
       if (en.hitStop > 0) { en.hitStop -= dt; spd = 0; }  // momentary stagger
@@ -1139,9 +1133,9 @@ function fireWater(fx: THREE.Group, st: any, tw: Tower, target: Enemy) {
 
 interface Particle { m: THREE.Mesh; vx: number; vy: number; vz: number; life: number; life0: number; grav: number; grow: number; o0: number; }
 const PARTICLES: Particle[] = [];
-// enemy flinch on hit — brief white flash + freeze + a little knockback
+// enemy flinch on hit — brief freeze + a little knockback (no colour flash)
 function hitReact(en: Enemy) {
-  en.hitFlash = 0.15; en.hitStop = 0.07; en.dist = Math.max(0, en.dist - 0.16);
+  en.hitStop = 0.07; en.dist = Math.max(0, en.dist - 0.16);
 }
 function setEmissiveAll(g: THREE.Object3D, f: number) {
   g.traverse((o) => {
