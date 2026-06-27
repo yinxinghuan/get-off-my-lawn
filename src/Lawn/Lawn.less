@@ -49,13 +49,16 @@
     backdrop-filter: @blur;
     border: 1px solid @glass-border;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(180, 230, 210, 0.12);
-    font-weight: 800;
-    font-size: 19px;
+    font-family: 'Creepster', cursive;
+    font-size: 25px;
+    letter-spacing: 0.05em;
     color: @gold;
     font-variant-numeric: tabular-nums;
     transition: box-shadow 0.25s ease;
     &--ready { box-shadow: 0 0 0 1px @spectral, 0 0 16px rgba(127, 230, 180, 0.5); }
   }
+  // the spooky display font for key values (souls, costs, final score)
+  .gol-num { font-family: 'Creepster', cursive; letter-spacing: 0.05em; font-weight: 400; }
 
   // ── start screen = live scene + logo on top + gesture hint (instant-play) ──
   &-tapcatch { position: absolute; inset: 0; z-index: 9; }
@@ -138,7 +141,7 @@
     font-size: 12px; font-weight: 800;
   }
   &-champ-nm { max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &-champ-sc { color: @gold; font-weight: 800; font-variant-numeric: tabular-nums; }
+  &-champ-sc { color: @gold; font-family: 'Creepster', cursive; font-size: 17px; letter-spacing: 0.04em; }
 
   // ── build tray — the weapons, their cost, and which is selected ──
   &-tray {
@@ -156,27 +159,40 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 2px;
-    padding: 8px 4px 7px;
-    border-radius: 16px;
-    background: @glass;
+    gap: 4px;
+    padding: 10px 4px 9px;
+    border-radius: 18px;
+    background: @glass-strong;
     -webkit-backdrop-filter: @blur;
     backdrop-filter: @blur;
-    border: 1px solid @glass-border;
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+    border: 1.5px solid @glass-border;
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(180, 230, 210, 0.12);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-    transition: transform 0.12s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    touch-action: manipulation;
+    transition: transform 0.12s ease, border-color 0.15s ease, box-shadow 0.15s ease, filter 0.2s ease, opacity 0.2s ease;
     &-ico { display: flex; }
-    &-name { font-size: 11px; font-weight: 700; color: @ink; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-    &-cost { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 800; color: @gold; font-variant-numeric: tabular-nums; }
+    &-ico svg { width: 28px; height: 28px; }
+    &-name { font-size: 11.5px; font-weight: 700; color: @ink; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    &-cost {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-family: 'Creepster', cursive; font-size: 18px; letter-spacing: 0.04em; line-height: 1;
+      color: @gold;
+    }
+    // SELECTED — strong spectral highlight + lift
     &--sel {
       border-color: @spectral;
-      box-shadow: 0 0 0 1px @spectral, 0 8px 22px rgba(0, 0, 0, 0.5), inset 0 0 14px rgba(127, 230, 180, 0.16);
-      transform: translateY(-3px);
+      box-shadow: 0 0 0 1.5px @spectral, 0 12px 26px rgba(0, 0, 0, 0.55), inset 0 0 18px rgba(127, 230, 180, 0.22);
+      transform: translateY(-5px);
     }
-    &--poor { opacity: 0.5; }
-    &--poor .gol-card-cost { color: @red; }
+    // CAN'T AFFORD — clearly greyed out + red cost (vs the bright, colourful affordable cards)
+    &--poor {
+      filter: grayscale(0.92) brightness(0.6);
+      opacity: 0.6;
+      box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
+      .gol-card-cost { color: @red; }
+      &.gol-card--sel { transform: none; box-shadow: 0 0 0 1.5px rgba(255, 100, 112, 0.6); }
+    }
   }
 
   // ── how-to steps on the attract screen ──
@@ -434,7 +450,7 @@
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(150, 200, 180, 0.18);
     .k { font-weight: 700; font-size: 10px; letter-spacing: 0.16em; color: @ink-soft; text-transform: uppercase; }
-    .v { font-weight: 900; font-size: 38px; color: #fff; line-height: 1; font-variant-numeric: tabular-nums; }
+    .v { font-family: 'Creepster', cursive; font-size: 46px; color: #fff; line-height: 1; letter-spacing: 0.04em; }
     &--best .v {
       background: linear-gradient(150deg, @gold, @gold-deep);
       -webkit-background-clip: text;

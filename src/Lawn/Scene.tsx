@@ -1086,8 +1086,7 @@ function killEnemy(st: any, en: Enemy, _root: THREE.Group) {
   // launch + burst (Block Party feel): corpse flies, bone + ectoplasm bits spray
   en.dying = 0.5; en.vy = 4.5 + Math.random() * 3; en.spin = (Math.random() - 0.5) * 18;
   if (en.hpBar) { st.fxLayer.remove(en.hpBar); en.hpBar = null; }
-  deathBurst(st.fxLayer, en.x, en.z, 0x8ff0c4);
-  ringPulse(st.fxLayer, en.x, en.z, 0x8ff0c4);
+  deathBurst(st.fxLayer, en.x, en.z); // matte chunks, no glow ring
   st.cash += en.def.bounty;
   st.score += 1;
   sfx.splat();
@@ -1159,17 +1158,17 @@ function splashHit(st: any, root: THREE.Group, x: number, z: number, radius: num
     }
   }
 }
-// Block-Party-style death burst — bone shards + ectoplasm bits flung out + up
-function deathBurst(fx: THREE.Group, x: number, z: number, color: number) {
-  for (let i = 0; i < 16; i++) {
-    const bone = Math.random() < 0.45;
-    const col = bone ? 0xe8e4d2 : color;
-    const m = ball(bone ? 0.07 : 0.09, col, x, 0.8 + Math.random() * 0.5, z);
-    const mm = m.material as THREE.MeshStandardMaterial;
-    if (!bone) { mm.emissive = new THREE.Color(color); mm.emissiveIntensity = 1.4; }
+// Block-Party-style death burst — MATTE physical chunks (no glow, so it reads as
+// shattering bone/gore, clearly different from the glowing weapon fx)
+function deathBurst(fx: THREE.Group, x: number, z: number) {
+  for (let i = 0; i < 18; i++) {
+    const k = Math.random();
+    const col = k < 0.4 ? 0xe6e1cd : k < 0.7 ? 0x6b6256 : 0x46402f; // bone / grey rot / dark earth
+    const r = 0.055 + Math.random() * 0.06;
+    const m = ball(r, col, x, 0.8 + Math.random() * 0.5, z); // no emissive → matte
     m.castShadow = false; fx.add(m);
-    const ang = Math.random() * Math.PI * 2, sp = 2.5 + Math.random() * 4.5;
-    PARTICLES.push({ m, vx: Math.sin(ang) * sp, vy: 3.5 + Math.random() * 4, vz: Math.cos(ang) * sp, life: 0.5 + Math.random() * 0.5 });
+    const ang = Math.random() * Math.PI * 2, sp = 2.5 + Math.random() * 5;
+    PARTICLES.push({ m, vx: Math.sin(ang) * sp, vy: 3.6 + Math.random() * 4, vz: Math.cos(ang) * sp, life: 0.55 + Math.random() * 0.5 });
   }
 }
 // small grey foot-dust puffs (kicked up as characters walk) — like the store

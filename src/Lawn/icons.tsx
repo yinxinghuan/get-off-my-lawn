@@ -2,19 +2,17 @@
 // the 3D art). Bone / spectral palette to match the graveyard theme.
 
 export function Candle({ lit }: { lit: boolean }) {
+  const body = lit ? '#e4dbc2' : '#54584f';
+  const edge = lit ? '#f3ecd6' : '#646961';
   return (
     <svg viewBox="0 0 24 24" className="gol-ico gol-ico--candle" aria-hidden>
-      {lit && (
-        <g className="gol-flame">
-          <ellipse cx="12" cy="6.4" rx="3.4" ry="4.2" fill="#ffcf7a" opacity="0.35" />
-          <path d="M12 2.4c1.7 1.8 2.5 3.2 2.5 4.5a2.5 2.5 0 1 1-5 0c0-1.1.8-2.5 2.5-4.5z" fill="#ffd982" />
-          <path d="M12 4.7c.9 1.1 1.3 2 1.3 2.7a1.3 1.3 0 1 1-2.6 0c0-.6.4-1.5 1.3-2.7z" fill="#fff6d6" />
-        </g>
-      )}
-      <rect x="11.5" y="8.2" width="1" height="2.2" fill={lit ? '#5a3f22' : '#4a4e48'} />
-      <rect x="8.6" y="10.2" width="6.8" height="10.6" rx="1.3" fill={lit ? '#ece3cb' : '#565a53'} />
-      <rect x="8.6" y="10.2" width="2.3" height="10.6" rx="1.1" fill={lit ? '#fff8e8' : '#666b62'} />
-      <rect x="7.5" y="20.2" width="9" height="2.4" rx="1.2" fill={lit ? '#c79f4d' : '#3f433f'} />
+      {/* flat tapered candle body */}
+      <path d="M8.6 8.6h6.8v10.8a1.6 1.6 0 0 1-1.6 1.6h-3.6a1.6 1.6 0 0 1-1.6-1.6z" fill={body} />
+      <path d="M8.6 8.6h2.1V21h-0.5a1.6 1.6 0 0 1-1.6-1.6z" fill={edge} />
+      {/* wick */}
+      <rect x="11.3" y="6.6" width="1.4" height="2.2" rx="0.6" fill={lit ? '#3a2e1c' : '#454942'} />
+      {/* single clean teardrop flame */}
+      {lit && <path d="M12 1.6c1.7 1.8 2.5 3.2 2.5 4.4a2.5 2.5 0 0 1-5 0c0-1.2.8-2.6 2.5-4.4z" fill="#ffcf5c" />}
     </svg>
   );
 }
