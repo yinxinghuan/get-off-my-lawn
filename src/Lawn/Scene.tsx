@@ -195,14 +195,10 @@ function flatify<T extends THREE.Object3D>(g: T, opts?: { cast?: boolean; receiv
   });
   return g;
 }
-// a light ashen wash on the freshly-dead — keeps their original colour/identity,
-// just drains it a little so they read as "recently deceased" (not solid grey)
-const PALLOR = new THREE.Color(0xb7bcb2);
+// the freshly-dead keep their full original colour/identity — the night fog +
+// cool moonlight already give plenty of "deceased" mood; graying them just made
+// the whole cast read as a grey mush. (Kept as a pass-through hook.)
 function paleDead(g: THREE.Group): THREE.Group {
-  g.traverse((o) => {
-    const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-    if (m && m.color) m.color.lerp(PALLOR, 0.2);
-  });
   return g;
 }
 function disposeGroup(g: THREE.Object3D) {
