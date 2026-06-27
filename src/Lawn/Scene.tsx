@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import {
   P, box, cyl, cone, ball,
   fence, lamp, PLANTS,
-  CHARACTERS, ARCHETYPES, MONSTERS, rigOf,
+  CHARACTERS, ARCHETYPES, MONSTERS, MYTHIC, rigOf,
 } from './lab';
 import { sfx } from './audio';
 
@@ -81,6 +81,7 @@ interface IntruderDef {
   bounty: number;
   scale: number;
   legs: boolean;     // biped (swing legs) vs critter (bob)
+  boss?: boolean;    // big, high-HP, every few nights
 }
 // the freshly-dead — ordinary people who just died (paled), come to squat your plot
 function deadDef(key: string, hp: number, spd: number, bounty: number, scale = 1): IntruderDef {
@@ -135,6 +136,12 @@ function poolForWave(w: number): IntruderDef[] {
   return ROSTER.slice(0, n);
 }
 
+// ─── Bosses — a big, high-HP horror leads every 5th night ───────────────────
+const BOSSES: IntruderDef[] = [
+  { id: 'boneTitan', make: () => MYTHIC.minotaur(), hp: 360, spd: 0.72, bounty: 120, scale: 1.95, legs: true, boss: true },
+  { id: 'direWolf', make: () => MONSTERS.werewolf(), hp: 300, spd: 0.96, bounty: 100, scale: 1.85, legs: true, boss: true },
+];
+
 // ─── Entity types ───────────────────────────────────────────────────────────
 interface Enemy {
   g: THREE.Group; def: IntruderDef;
@@ -170,7 +177,7 @@ interface Props {
   mode: Mode;
   selectedType: number;
   onHud: (h: HudState) => void;
-  onWave: (w: number) => void;
+  onWave: (w: number, boss: boolean) => void;
   onGameOver: (score: number) => void;
   registerRestart: (fn: () => void) => void;
 }
@@ -188,15 +195,13 @@ function flatify<T extends THREE.Object3D>(g: T, opts?: { cast?: boolean; receiv
   });
   return g;
 }
-// tint a character toward ashen corpse pallor (the freshly dead)
-const PALLOR = new THREE.Color(0x97a6a4);
+// a light ashen wash on the freshly-dead — keeps their original colour/identity,
+// just drains it a little so they read as "recently deceased" (not solid grey)
+const PALLOR = new THREE.Color(0xb7bcb2);
 function paleDead(g: THREE.Group): THREE.Group {
   g.traverse((o) => {
     const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-    if (m && m.color) {
-      m.color.lerp(PALLOR, 0.42);
-      if ('emissive' in m) { m.emissive = new THREE.Color(0x223033); (m as any).emissiveIntensity = 0.25; }
-    }
+    if (m && m.color) m.color.lerp(PALLOR, 0.2);
   });
   return g;
 }
@@ -524,7 +529,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       }
       if (en.hpBar) en.hpBar.position.set(en.x, 1.5 * en.def.scale * ENEMY_SCALE + 0.9, en.z);
       // foot dust kicked up as they shamble (bipeds only; ghosts float)
-      if (en.def.legs) { en.dustT -= dt; if (en.dustT <= 0) { footDust(fx, en.x, en.z); en.dustT = 0.3; } }
+      if (en.def.legs && en.hitStop <= 0) { en.dustT -= dt; if (en.dustT <= 0) { footDust(fx, en.x, en.z); en.dustT = 0.2; } }
       // reached the crypt
       if (en.dist >= PATH_TOTAL) {
         en.reached = true; en.dead = true;
@@ -1068,13 +1073,15 @@ function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
   g.rotation.y = Math.atan2(p.dx, p.dz); // face along the path
   root.add(g);
   const hpBar = makeHpBar();
+  if (def.boss) hpBar.scale.set(1.9, 0.26, 1); // bigger bar for bosses
   drawHpBar(hpBar, 1);
   st.fxLayer.add(hpBar);
-  // gentle early ramp + a steeper quadratic tail so late waves stay threatening
-  const hpScaled = Math.round(def.hp * (1 + st.wave * 0.11 + st.wave * st.wave * 0.004));
+  // gentle early ramp + a steeper quadratic tail so late nights keep biting
+  const hpScaled = Math.round(def.hp * (1 + st.wave * 0.11 + st.wave * st.wave * 0.006));
+  const speedK = 1 + Math.min(0.4, st.wave * 0.02); // the dead get a little quicker each night
   const en: Enemy = {
     g, def, dist: 0, x, z, laneOff,
-    hp: hpScaled, maxHp: hpScaled, spd: def.spd, phase: Math.random() * 6,
+    hp: hpScaled, maxHp: hpScaled, spd: def.spd * speedK, phase: Math.random() * 6,
     dead: false, reached: false, slow: 0, hpBar,
     dying: 0, vy: 0, spin: 0, dustT: Math.random() * 0.3,
     hitFlash: 0, hitStop: 0, flashOn: false,
@@ -1134,7 +1141,7 @@ function fireWater(fx: THREE.Group, st: any, tw: Tower, target: Enemy) {
   }
 }
 
-interface Particle { m: THREE.Mesh; vx: number; vy: number; vz: number; life: number; }
+interface Particle { m: THREE.Mesh; vx: number; vy: number; vz: number; life: number; life0: number; grav: number; grow: number; o0: number; }
 const PARTICLES: Particle[] = [];
 // enemy flinch on hit — brief white flash + freeze + a little knockback
 function hitReact(en: Enemy) {
@@ -1168,17 +1175,18 @@ function deathBurst(fx: THREE.Group, x: number, z: number) {
     const m = ball(r, col, x, 0.8 + Math.random() * 0.5, z); // no emissive → matte
     m.castShadow = false; fx.add(m);
     const ang = Math.random() * Math.PI * 2, sp = 2.5 + Math.random() * 5;
-    PARTICLES.push({ m, vx: Math.sin(ang) * sp, vy: 3.6 + Math.random() * 4, vz: Math.cos(ang) * sp, life: 0.55 + Math.random() * 0.5 });
+    PARTICLES.push({ m, vx: Math.sin(ang) * sp, vy: 3.6 + Math.random() * 4, vz: Math.cos(ang) * sp, life: 0.55 + Math.random() * 0.5, life0: 1, grav: 9, grow: 0, o0: 1 });
   }
 }
 // small grey foot-dust puffs (kicked up as characters walk) — like the store
 function footDust(fx: THREE.Group, x: number, z: number) {
-  for (let i = 0; i < 2; i++) {
-    const m = ball(0.05 + Math.random() * 0.03, 0x8c8f86, x + (Math.random() - 0.5) * 0.2, 0.06, z + (Math.random() - 0.5) * 0.2);
-    (m.material as THREE.MeshStandardMaterial).transparent = true;
-    (m.material as THREE.MeshStandardMaterial).opacity = 0.55;
-    m.castShadow = false; m.receiveShadow = false; fx.add(m);
-    PARTICLES.push({ m, vx: (Math.random() - 0.5) * 0.5, vy: 0.5 + Math.random() * 0.4, vz: (Math.random() - 0.5) * 0.5, life: 0.35 + Math.random() * 0.2 });
+  for (let i = 0; i < 3; i++) {
+    const r = 0.1 + Math.random() * 0.06;
+    const m = ball(r, 0xcabfa6, x + (Math.random() - 0.5) * 0.26, 0.07, z + (Math.random() - 0.5) * 0.26); // pale dust, pops on the dark ground
+    const mm = m.material as THREE.MeshStandardMaterial;
+    mm.transparent = true; mm.opacity = 0.62; m.castShadow = false; m.receiveShadow = false; fx.add(m);
+    const life = 0.5 + Math.random() * 0.25;
+    PARTICLES.push({ m, vx: (Math.random() - 0.5) * 0.45, vy: 0.35 + Math.random() * 0.3, vz: (Math.random() - 0.5) * 0.45, life, life0: life, grav: 1.6, grow: 2.6, o0: 0.62 });
   }
 }
 // pop a freshly-placed tower in from nothing (tactile "slam")
@@ -1202,7 +1210,7 @@ function splash(fx: THREE.Group, x: number, y: number, z: number, color = 0x8fe6
     fx.add(m);
     PARTICLES.push({
       m, vx: (Math.random() - 0.5) * 2, vy: 1.5 + Math.random() * 1.5, vz: (Math.random() - 0.5) * 2,
-      life: 0.4 + Math.random() * 0.2,
+      life: 0.4 + Math.random() * 0.2, life0: 1, grav: 9, grow: 0, o0: 1,
     });
   }
 }
@@ -1210,9 +1218,12 @@ function renderFx(fx: THREE.Group, dt: number) {
   for (let i = PARTICLES.length - 1; i >= 0; i--) {
     const p = PARTICLES[i];
     p.life -= dt;
-    p.vy -= 9 * dt;
+    p.vy -= p.grav * dt;
     p.m.position.x += p.vx * dt; p.m.position.y += p.vy * dt; p.m.position.z += p.vz * dt;
-    if (p.life <= 0 || p.m.position.y < 0) {
+    if (p.grow) p.m.scale.multiplyScalar(1 + p.grow * dt);              // dust expands
+    const mat = p.m.material as THREE.MeshStandardMaterial;
+    if (mat.transparent) mat.opacity = Math.max(0, p.life / p.life0) * p.o0; // and fades out
+    if (p.life <= 0 || p.m.position.y < -0.05) {
       fx.remove(p.m); disposeGroup(p.m); PARTICLES.splice(i, 1);
     }
   }
@@ -1250,16 +1261,19 @@ function startWave(st: any, onWave: (w: number) => void) {
   st.wave += 1;
   st.betweenWaves = false;
   const pool = poolForWave(st.wave);
-  const count = 4 + st.wave * 2;
-  st.spawnGap = Math.max(0.45, 1.15 - st.wave * 0.06);
+  const count = 4 + Math.round(st.wave * 2.2);              // more dead each night
+  st.spawnGap = Math.max(0.4, 1.1 - st.wave * 0.07);        // and they pour in denser
   st.spawnQ = [];
   for (let i = 0; i < count; i++) {
     const def = pool[Math.floor(Math.random() * pool.length)];
     st.spawnQ.push(def);
   }
+  // a boss leads every 5th night
+  const isBoss = st.wave % 5 === 0;
+  if (isBoss) st.spawnQ.unshift(BOSSES[(st.wave / 5 - 1) % BOSSES.length]);
   st.spawnT = 0.3;
   sfx.wave();
-  onWave(st.wave);
+  onWave(st.wave, isBoss);
   pushHud(st);
 }
 function pushHud(st: any) {

@@ -30,6 +30,7 @@ const STR: Record<string, { en: string; zh: string }> = {
   leaderboard:{ en: 'GRAVE KEEPERS', zh: '守墓传奇' },
   guestbook:  { en: 'EPITAPHS', zh: '墓志铭' },
   newBest:    { en: 'NEW BEST!', zh: '新纪录！' },
+  boss:       { en: 'BOSS RISES', zh: '强敌降临' },
 };
 
 export function t(key: keyof typeof STR): string {

@@ -21,6 +21,9 @@ export function Lawn() {
   );
   const [hud, setHud] = useState<HudState>({ lives: 5, cash: 175, score: 0, wave: 0, towers: 0 });
   const [waveBanner, setWaveBanner] = useState<number | null>(null);
+  const [bossBanner, setBossBanner] = useState(false);
+  const submittedBest = useRef(0);
+  const lastSubmitT = useRef(0);
   const [best, setBest] = useState<number>(() => Number(localStorage.getItem(BEST_KEY) || 0));
   const [showBoard, setShowBoard] = useState(false);
   const [muted, setMutedState] = useState(isMuted());
@@ -80,11 +83,27 @@ export function Lawn() {
   }, [isInAigram, fetchLeaderboard, events]);
 
   const onHud = useCallback((h: HudState) => setHud(h), []);
-  const onWave = useCallback((w: number) => {
+  const onWave = useCallback((w: number, boss: boolean) => {
     setWaveBanner(w);
+    setBossBanner(boss);
     window.clearTimeout(bannerTimer.current);
-    bannerTimer.current = window.setTimeout(() => setWaveBanner(null), 1500);
+    bannerTimer.current = window.setTimeout(() => { setWaveBanner(null); setBossBanner(false); }, boss ? 2200 : 1500);
   }, []);
+
+  // live score saving — record a NEW personal best the moment it happens, so a
+  // run still counts even if the player scrolls away without dying (throttled,
+  // and never lowers an existing best).
+  useEffect(() => {
+    if (phase !== 'playing' || !isInAigram) return;
+    if (hud.score > Math.max(preRunBest.current, submittedBest.current)) {
+      const now = performance.now();
+      if (now - lastSubmitT.current > 3500) {
+        lastSubmitT.current = now;
+        submittedBest.current = hud.score;
+        submitScore(hud.score).catch(() => {});
+      }
+    }
+  }, [hud.score, phase, isInAigram, submitScore]);
   const onGameOver = useCallback((score: number) => {
     finalScore.current = score;
     newBest.current = false;
@@ -98,8 +117,8 @@ export function Lawn() {
   }, [submitScore, sendBeatNotify]);
   const registerRestart = useCallback((fn: () => void) => { restartRef.current = fn; }, []);
 
-  const startGame = () => { unlockAudio(); prevTowers.current = 0; setSelectedType(0); setPhase('playing'); };
-  const again = () => { prevTowers.current = 0; setSelectedType(0); setPhase('playing'); };
+  const startGame = () => { unlockAudio(); prevTowers.current = 0; submittedBest.current = 0; lastSubmitT.current = 0; setSelectedType(0); setPhase('playing'); };
+  const again = () => { prevTowers.current = 0; submittedBest.current = 0; lastSubmitT.current = 0; setSelectedType(0); setPhase('playing'); };
   const toggleMute = () => { const m = !muted; setMuted(m); setMutedState(m); };
 
   useEffect(() => () => window.clearTimeout(bannerTimer.current), []);
@@ -191,7 +210,10 @@ export function Lawn() {
       )}
 
       {waveBanner != null && phase === 'playing' && (
-        <div className="gol-wavebanner" key={waveBanner}>{t('wave')} {waveBanner}</div>
+        <div className={`gol-wavebanner${bossBanner ? ' gol-wavebanner--boss' : ''}`} key={waveBanner}>
+          {bossBanner && <span className="gol-bosswarn">{t('boss')}</span>}
+          {t('wave')} {waveBanner}
+        </div>
       )}
 
       {/* ── start = the live scene itself (instant-play): logo on top, a simple
