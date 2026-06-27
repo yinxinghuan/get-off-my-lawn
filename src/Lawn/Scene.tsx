@@ -428,7 +428,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       const rm = p.ring.material as THREE.MeshBasicMaterial;
       if (aff) {
         const pulse = 0.6 + Math.sin(st.time * 3.2 + p.x) * 0.28;
-        rm.color.setHex(0x7fe6b4); rm.opacity = pulse;
+        rm.color.setHex(0x79e0ad); rm.opacity = pulse;
         p.ring.scale.setScalar(1 + Math.sin(st.time * 3.2 + p.x) * 0.06);
         p.ghost.visible = true;
         p.ghost.position.y = Math.sin(st.time * 2 + p.x) * 0.07;
@@ -847,13 +847,13 @@ function makePlot(x: number, z: number): Plot {
 
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.36, 0.52, 28),
-    new THREE.MeshBasicMaterial({ color: 0x7fe6b4, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({ color: 0x79e0ad, transparent: true, opacity: 0.55, side: THREE.DoubleSide }),
   );
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.22;
   marker.add(ring);
 
   const ghost = new THREE.Group();
-  const beam = box(0.05, 0.62, 0.05, 0x7fe6b4, 0, 0.46, 0, { e: 0x4fc88c, ei: 0.5 });
+  const beam = box(0.05, 0.62, 0.05, 0x79e0ad, 0, 0.46, 0, { e: 0x4fc88c, ei: 0.5 });
   (beam.material as THREE.MeshStandardMaterial).transparent = true;
   (beam.material as THREE.MeshStandardMaterial).opacity = 0.5; beam.castShadow = false;
   ghost.add(beam);
@@ -876,11 +876,11 @@ export interface TowerType {
   blurb: string;
 }
 export const TOWER_TYPES: TowerType[] = [
-  // fast cheap single-target DPS
-  { id: 'brazier', name: 'Fire Cannon', cost: 80, color: 0xff7a2c, range: 2.7, dmg: 7, rate: 3.0, slow: 0.2, splash: 0, chillR: 0, head: 'flame', blurb: 'Rapid fireballs' },
-  // control: low damage, strong slow + chills a small area
-  { id: 'frost', name: 'Frost Lance', cost: 110, color: 0x9fe0ff, range: 2.7, dmg: 4, rate: 1.1, slow: 2.4, splash: 0, chillR: 1.2, head: 'crystal', blurb: 'Slows & chills' },
-  // heavy slow-firing artillery: lobbed AoE blast
+  // fast cheap single-target DPS — Ember
+  { id: 'brazier', name: 'Fire Cannon', cost: 80, color: 0xff8a3c, range: 2.7, dmg: 7, rate: 3.0, slow: 0.2, splash: 0, chillR: 0, head: 'flame', blurb: 'Rapid fireballs' },
+  // control: low damage, strong slow + chills a small area — Frost
+  { id: 'frost', name: 'Frost Lance', cost: 110, color: 0x8fe0ff, range: 2.7, dmg: 4, rate: 1.1, slow: 2.4, splash: 0, chillR: 1.2, head: 'crystal', blurb: 'Slows & chills' },
+  // heavy slow-firing artillery: lobbed AoE blast — Haunt
   { id: 'mortar', name: 'Bone Mortar', cost: 160, color: 0xc79bf0, range: 3.3, dmg: 22, rate: 0.55, slow: 0.3, splash: 1.5, chillR: 0, head: 'mortar', blurb: 'Lobbed splash blast' },
 ];
 
