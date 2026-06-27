@@ -332,7 +332,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
     function onMove(e: PointerEvent) {
       if (!pd) return;
       const dx = e.clientX - pd.x, dy = e.clientY - pd.y;
-      if (!pd.moved && Math.hypot(dx, dy) > 8) pd.moved = true;
+      if (!pd.moved && Math.hypot(dx, dy) > 14) pd.moved = true; // higher threshold so taps aren't eaten as drags
       if (pd.moved) { azimuthRef.current -= dx * 0.006; pd.x = e.clientX; pd.y = e.clientY; applyCam(); }
     }
     function onUp(e: PointerEvent) { if (pd && !pd.moved) tap(e); pd = null; }
@@ -776,14 +776,15 @@ function makeGravestone(i: number): THREE.Group {
 }
 
 function makePlot(x: number, z: number): Plot {
-  // transparent raycast disc (generous tap target). NOTE: must stay visible:true
-  // — the raycaster skips objects with visible:false — so we render it fully
-  // transparent instead.
+  // tap target = a tall invisible COLUMN (not a flat disc) so tapping either the
+  // ground socket OR the tower that stands on it both register — this is what
+  // made placing/upgrading hard. Stays visible:true (raycaster skips visible:false)
+  // but fully transparent.
   const disc = new THREE.Mesh(
-    new THREE.CircleGeometry(0.7, 16),
+    new THREE.CylinderGeometry(0.92, 0.92, 2.4, 12),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
   );
-  disc.rotation.x = -Math.PI / 2; disc.position.set(x, 0.05, z);
+  disc.position.set(x, 1.05, z);
 
   // build-socket marker: a glowing spectral ring on the pad + a floating ghost
   // brazier-flame preview (shown only when affordable → "a brazier goes here").

@@ -155,8 +155,7 @@ export function Lawn() {
           </div>
           {champPill('gol-champ--play')}
           <div className="gol-hud gol-meta">
-            <span className="gol-chip"><b>{t('wave')}</b> {hud.wave || 1}</span>
-            <span className="gol-chip gol-chip--score">{hud.score} <b>{t('score')}</b></span>
+            <span className="gol-chip"><b>{t('wave')}</b> {hud.wave || 1} &nbsp;·&nbsp; {hud.score} <b>{t('score')}</b></span>
           </div>
 
           {/* build guide — until the first weapon is placed: what to do */}
