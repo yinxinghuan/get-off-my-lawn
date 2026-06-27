@@ -829,10 +829,10 @@ function makePlot(x: number, z: number): Plot {
   // made placing/upgrading hard. Stays visible:true (raycaster skips visible:false)
   // but fully transparent.
   const disc = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.92, 0.92, 2.4, 12),
+    new THREE.CylinderGeometry(0.8, 0.8, 1.2, 12),   // shorter column → covers socket + tower base without towering into neighbours (less mis-select)
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
   );
-  disc.position.set(x, 1.05, z);
+  disc.position.set(x, 0.55, z);
 
   // build-socket marker: a glowing spectral ring on the pad + a floating ghost
   // brazier-flame preview (shown only when affordable → "a brazier goes here").
@@ -847,11 +847,11 @@ function makePlot(x: number, z: number): Plot {
   marker.add(ring);
 
   const ghost = new THREE.Group();
-  const beam = box(0.05, 0.62, 0.05, 0x79e0ad, 0, 0.46, 0, { e: 0x4fc88c, ei: 0.5 });
+  const beam = box(0.05, 0.32, 0.05, 0x79e0ad, 0, 0.24, 0, { e: 0x4fc88c, ei: 0.5 });
   (beam.material as THREE.MeshStandardMaterial).transparent = true;
   (beam.material as THREE.MeshStandardMaterial).opacity = 0.5; beam.castShadow = false;
   ghost.add(beam);
-  const orb = ball(0.17, 0x8ff0c4, 0, 0.84, 0, 1);
+  const orb = ball(0.15, 0x8ff0c4, 0, 0.5, 0, 1);
   const om = orb.material as THREE.MeshStandardMaterial;
   om.emissive = new THREE.Color(0x6fe0a8); om.emissiveIntensity = 1.1;
   om.transparent = true; om.opacity = 0.78; orb.castShadow = false;
@@ -1067,8 +1067,8 @@ function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
   drawHpBar(hpBar, 1);
   st.fxLayer.add(hpBar);
   // gentle early ramp + a steeper quadratic tail so late nights keep biting
-  const hpScaled = Math.round(def.hp * (1 + st.wave * 0.11 + st.wave * st.wave * 0.006));
-  const speedK = 1 + Math.min(0.4, st.wave * 0.02); // the dead get a little quicker each night
+  const hpScaled = Math.round(def.hp * (1 + st.wave * 0.13 + st.wave * st.wave * 0.009));
+  const speedK = 1 + Math.min(0.55, st.wave * 0.028); // the dead get quicker each night
   const en: Enemy = {
     g, def, dist: 0, x, z, laneOff,
     hp: hpScaled, maxHp: hpScaled, spd: def.spd * speedK, phase: Math.random() * 6,
@@ -1251,8 +1251,8 @@ function startWave(st: any, onWave: (w: number) => void) {
   st.wave += 1;
   st.betweenWaves = false;
   const pool = poolForWave(st.wave);
-  const count = 4 + Math.round(st.wave * 2.2);              // more dead each night
-  st.spawnGap = Math.max(0.4, 1.1 - st.wave * 0.07);        // and they pour in denser
+  const count = 4 + Math.round(st.wave * 2.5);              // more dead each night
+  st.spawnGap = Math.max(0.32, 1.05 - st.wave * 0.08);      // and they pour in denser
   st.spawnQ = [];
   for (let i = 0; i < count; i++) {
     const def = pool[Math.floor(Math.random() * pool.length)];
