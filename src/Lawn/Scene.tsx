@@ -364,6 +364,25 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
     if (mode !== 'play') return;
     const st = S.current;
     resetGame(root, fx, st, onHud);
+    // showcase: place every weapon at levels 1/2/3/4 to compare the form evolution
+    if (typeof location !== 'undefined' && location.search.includes('showcase')) {
+      const rows: [number, number][] = [[0, 0], [2, 0], [4, 0], [6, 0], [1, 1], [3, 1], [5, 1], [7, 1]];
+      const plan: [number, number, number][] = [ // plotIdx, type, level
+        [0, 0, 1], [2, 0, 2], [4, 0, 3], [6, 0, 4],
+        [1, 1, 1], [3, 1, 2], [5, 1, 3], [7, 1, 4],
+        [8, 2, 4],
+      ];
+      void rows;
+      plan.forEach(([idx, ty, lvl]) => {
+        const plot = st.plots[idx];
+        if (plot && !plot.tower) {
+          plot.tower = plantTower(root, plot, ty);
+          for (let k = 1; k < lvl; k++) upgradeTower(plot.tower);
+          st.towers.push(plot.tower); plot.marker.visible = false;
+        }
+      });
+      return;
+    }
     // debug: after the reset, pre-plant towers + scatter intruders for a combat shot
     if (typeof location !== 'undefined' && location.search.includes('debug')) {
       [[2, 0], [3, 2], [1, 1], [6, 0]].forEach(([idx, ty]) => {
@@ -920,40 +939,64 @@ function rebuildHead(tw: Tower) {
   const head = tw.head;
   for (const c of [...head.children]) { head.remove(c); disposeGroup(c); }
   const shape = TOWER_TYPES[tw.type].head, lv = tw.level, col = tw.color;
-  if (shape === 'flame') {
-    // FIRE — round flame puffs that JET FORWARD (+z) so the head visibly aims
-    const noz = cyl(0.13, 0.17, 0.18, 8, 0x23241f, 0, 0.04, -0.04); noz.rotation.x = Math.PI / 2; flatify(noz); head.add(noz);
-    const n = 3 + (lv - 1);
-    for (let i = 0; i < n; i++) {
-      const t = i / Math.max(1, n - 1);
-      const r = (0.2 - t * 0.1) * (1 + (lv - 1) * 0.1);
-      const fz = 0.05 + t * (0.32 + (lv - 1) * 0.07);   // billows forward = the jet
-      const fy = 0.06 + Math.sin(t * Math.PI) * 0.11;
-      const warm = t > 0.5;
-      const fb = ball(r, warm ? 0xffd27a : col, 0, fy, fz, 1); fb.castShadow = false;
-      emis(fb, warm ? 0xffd27a : col, 1.7); head.add(fb);
-    }
-  } else if (shape === 'crystal') {
-    // FROST — a forward-pointing faceted ice LANCE (aims) + angular base shards
-    const lance = cone(0.13 + (lv - 1) * 0.02, 0.5 + (lv - 1) * 0.13, 4, col, 0, 0.12, 0);
-    lance.rotation.x = Math.PI / 2; lance.rotation.z = 0.4; lance.position.z = 0.3 + (lv - 1) * 0.06;
-    emis(lance, col, 1.5); head.add(lance);
-    const shards = 2 + (lv - 1);
-    for (let i = 0; i < shards; i++) {
-      const a = (i / shards) * Math.PI * 2;
-      crystalSpike(head, 0.08, 0.24 + (lv - 1) * 0.04, Math.cos(a) * 0.16, 0.1, Math.sin(a) * 0.16 - 0.02, col, a);
-    }
-  } else {
-    // MORTAR — forward+up cannon barrel(s)
-    const barrels = Math.min(lv, 3), len = 0.34 + lv * 0.07;
-    const breech = box(0.34, 0.2, 0.3, 0x3a3d36, 0, 0.06, -0.04); flatify(breech); head.add(breech);
-    for (let i = 0; i < barrels; i++) {
-      const bx = (i - (barrels - 1) / 2) * 0.15;
-      const bar = cyl(0.1, 0.13, len, 10, 0x23241f, bx, 0.12 + len * 0.2, len * 0.3); bar.rotation.x = -0.7; flatify(bar); head.add(bar);
-      const ember = ball(0.07, col, bx, 0.12 + len * 0.38, len * 0.56, 1); ember.castShadow = false; emis(ember, col, 1.7); head.add(ember);
-    }
-    if (lv >= 4) { const ring2 = cyl(0.44, 0.44, 0.06, 12, 0x4a4d45, 0, -0.04, 0); flatify(ring2); head.add(ring2); }
+  if (shape === 'flame') flameHead(head, lv, col);
+  else if (shape === 'crystal') crystalHead(head, lv, col);
+  else mortarHead(head, lv, col);
+}
+// a forward jet of rounded flame puffs from origin ox, fanning at angle ang
+function flameJet(head: THREE.Group, ox: number, ang: number, reach: number, puffs: number, col: number) {
+  for (let i = 0; i < puffs; i++) {
+    const t = i / Math.max(1, puffs - 1);
+    const r = 0.17 - t * 0.08;
+    const fz = 0.05 + t * reach;
+    const fx = ox + Math.sin(ang) * t * reach * 0.7;
+    const fy = 0.06 + Math.sin(t * Math.PI) * 0.1;
+    const warm = t > 0.5;
+    const fb = ball(r, warm ? 0xffd27a : col, fx, fy, fz, 1); fb.castShadow = false;
+    emis(fb, warm ? 0xffd27a : col, 1.7); head.add(fb);
   }
+}
+// FIRE — 1 jet → twin → triple fan → roaring inferno (form changes each level)
+function flameHead(head: THREE.Group, lv: number, col: number) {
+  const noz = cyl(0.13 + lv * 0.015, 0.17 + lv * 0.015, 0.16 + lv * 0.03, 8, 0x23241f, 0, 0.04, -0.04); noz.rotation.x = Math.PI / 2; flatify(noz); head.add(noz);
+  if (lv === 1) flameJet(head, 0, 0, 0.34, 4, col);
+  else if (lv === 2) { flameJet(head, -0.1, -0.28, 0.4, 5, col); flameJet(head, 0.1, 0.28, 0.4, 5, col); }
+  else if (lv === 3) { flameJet(head, -0.12, -0.5, 0.42, 5, col); flameJet(head, 0, 0, 0.52, 6, col); flameJet(head, 0.12, 0.5, 0.42, 5, col); }
+  else {
+    flameJet(head, -0.14, -0.55, 0.46, 6, col); flameJet(head, 0, 0, 0.62, 7, col); flameJet(head, 0.14, 0.55, 0.46, 6, col);
+    const core = ball(0.17, 0xffffff, 0, 0.16, 0.12, 1); core.castShadow = false; emis(core, 0xfff0d0, 2.6); head.add(core);
+    for (let i = 0; i < 3; i++) { const e = ball(0.05, 0xffd27a, (i - 1) * 0.2, 0.5 + i * 0.05, 0.18, 0); e.castShadow = false; emis(e, 0xffb45a, 1.9); head.add(e); }
+  }
+}
+// FROST — single lance → +2 shards → 4 shards + back spire → spire forest + ring + core
+function crystalHead(head: THREE.Group, lv: number, col: number) {
+  const lance = cone(0.12 + lv * 0.016, 0.44 + lv * 0.1, 4, col, 0, 0.12, 0);
+  lance.rotation.x = Math.PI / 2; lance.rotation.z = 0.4; lance.position.z = 0.28 + lv * 0.04; emis(lance, col, 1.5); head.add(lance);
+  if (lv === 1) { crystalSpike(head, 0.07, 0.2, 0, 0.06, -0.12, col); }
+  else if (lv === 2) { crystalSpike(head, 0.08, 0.26, -0.15, 0.08, -0.06, col, -0.6); crystalSpike(head, 0.08, 0.26, 0.15, 0.08, -0.06, col, 0.6); }
+  else if (lv === 3) {
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2; crystalSpike(head, 0.08, 0.28, Math.cos(a) * 0.17, 0.08, Math.sin(a) * 0.17 - 0.02, col, a); }
+    crystalSpike(head, 0.1, 0.42, 0, 0.1, -0.18, col);
+  } else {
+    crystalSpike(head, 0.11, 0.54, 0, 0.1, -0.2, col);
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; crystalSpike(head, 0.08, 0.28 + (i % 2) * 0.14, Math.cos(a) * 0.2, 0.08, Math.sin(a) * 0.2 - 0.04, col, a); }
+    const ring = cyl(0.27, 0.27, 0.04, 12, col, 0, 0.04, 0); ring.rotation.x = Math.PI / 2; ring.position.z = 0.08; emis(ring, col, 0.8); head.add(ring);
+    const core = ball(0.1, 0xffffff, 0, 0.13, 0.0, 1); core.castShadow = false; emis(core, col, 2.2); head.add(core);
+  }
+}
+// MORTAR — 1 barrel → +magazine → twin barrels + armour → triple battery + drum
+function mortarHead(head: THREE.Group, lv: number, col: number) {
+  const breech = box(0.32 + lv * 0.02, 0.2 + lv * 0.015, 0.3, 0x3a3d36, 0, 0.06, -0.04); flatify(breech); head.add(breech);
+  const barrels = lv <= 1 ? 1 : lv === 2 ? 1 : lv === 3 ? 2 : 3;
+  const len = 0.34 + lv * 0.06;
+  for (let i = 0; i < barrels; i++) {
+    const bx = (i - (barrels - 1) / 2) * 0.16;
+    const bar = cyl(0.1 + (lv >= 2 ? 0.015 : 0), 0.13, len, 10, 0x23241f, bx, 0.12 + len * 0.2, len * 0.3); bar.rotation.x = -0.7; flatify(bar); head.add(bar);
+    const ember = ball(0.07, col, bx, 0.12 + len * 0.38, len * 0.56, 1); ember.castShadow = false; emis(ember, col, 1.7); head.add(ember);
+  }
+  if (lv === 2) { const mag = box(0.15, 0.17, 0.22, 0x2a2c29, 0.25, 0.08, -0.06); flatify(mag); head.add(mag); }
+  if (lv >= 3) for (const sx of [-1, 1]) { const plate = box(0.06, 0.24, 0.3, 0x4a4d45, sx * 0.27, 0.08, 0); flatify(plate); head.add(plate); }
+  if (lv >= 4) { const drum = cyl(0.13, 0.13, 0.2, 10, 0x2a2c29, 0, 0.06, -0.18); drum.rotation.x = Math.PI / 2; flatify(drum); head.add(drum); const ring2 = cyl(0.46, 0.46, 0.06, 12, 0x4a4d45, 0, -0.04, 0); flatify(ring2); head.add(ring2); }
 }
 // gold up-chevron sprite shown over a tower when it can be upgraded
 function makeUpArrow(): THREE.Sprite {

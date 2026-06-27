@@ -17,7 +17,7 @@ const BEST_KEY = 'gol_best';
 
 export function Lawn() {
   const [phase, setPhase] = useState<Phase>(
-    typeof location !== 'undefined' && location.search.includes('debug') ? 'playing' : 'attract',
+    typeof location !== 'undefined' && /debug|showcase/.test(location.search) ? 'playing' : 'attract',
   );
   const [hud, setHud] = useState<HudState>({ lives: 5, cash: 175, score: 0, wave: 0, towers: 0 });
   const [waveBanner, setWaveBanner] = useState<number | null>(null);
