@@ -12,11 +12,13 @@ import { sfx } from './audio';
 // ─── Tuning ────────────────────────────────────────────────────────────────
 const START_CASH = 180;
 const START_LIVES = 5;
-// Upgrade cost ESCALATES geometrically — so souls always have a sink and you can
-// never "finish" maxing everything. The cost wall (not a level cap) is the limit:
-// L1→2:50  →3:80  →4:128  →5:205  →6:328  →7:524  →8:839 …  always something to spend on.
-const UPGRADE_COST = (lvl: number) => Math.round(50 * Math.pow(1.6, lvl - 1));
-const TOWER_MAX_LVL = 20;   // practical ceiling (the cost wall stops you long before this)
+// Upgrade cost rises smoothly (polynomial, NOT exponential) so it always escalates
+// but income from surviving longer can keep pace — you can KEEP upgrading forever
+// instead of hitting an exponential wall around lvl 10. There's always a next level
+// to pour souls into, and it stays affordable as the nights (and your kills) climb.
+//   lvl1:55  2:145  3:256  5:524  10:1381  15:2585  20:3646 …  gentle, endless.
+const UPGRADE_COST = (lvl: number) => Math.round(55 * Math.pow(lvl, 1.4));
+const TOWER_MAX_LVL = 99;   // effectively no ceiling — the only limit is how long you last
 const TOWER_VFORM_MAX = 4;  // the head's silhouette has 4 distinct forms; deeper levels keep the top form (+ grow)
 const ENEMY_SCALE = 0.46;
 
@@ -140,11 +142,28 @@ function poolForWave(w: number): IntruderDef[] {
   return ROSTER.slice(0, n);
 }
 
-// ─── Bosses — a big, high-HP horror leads every 5th night ───────────────────
+// ─── Bosses ─────────────────────────────────────────────────────────────────
+// Two flavours, so a boss leads EVERY THIRD night (not a rare every-5th slog):
+//  • apex bosses — the dedicated big horrors, lead the milestone nights
+//  • ELITES — ANY roster character, just scaled up + heavily buffed. Cheap to make,
+//    so every undead in the cast can show up as a menacing oversized champion.
 const BOSSES: IntruderDef[] = [
   { id: 'boneTitan', make: () => MYTHIC.minotaur(), hp: 360, spd: 0.72, bounty: 120, scale: 1.95, legs: true, boss: true },
   { id: 'direWolf', make: () => MONSTERS.werewolf(), hp: 300, spd: 0.96, bounty: 100, scale: 1.85, legs: true, boss: true },
 ];
+// turn any ordinary intruder into a big, beefy, high-bounty elite champion
+function eliteFrom(def: IntruderDef): IntruderDef {
+  return {
+    id: 'elite_' + def.id,
+    make: def.make,
+    hp: Math.round(def.hp * 4.6),
+    spd: def.spd * 0.94,            // heavy → a touch slower than its normal self
+    bounty: Math.round(def.bounty * 5 + 20),
+    scale: def.scale * 1.7,         // looms over the crowd
+    legs: def.legs,
+    boss: true,
+  };
+}
 
 // ─── Entity types ───────────────────────────────────────────────────────────
 interface Enemy {
@@ -334,7 +353,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
           deathBurst(fx, tw.x, tw.z, tw.color);            // upward spark burst
           ringPulse(fx, tw.x, tw.z, tw.color);
           pushHud(st);
-        } else { bounce(tw.g); sfx.splat(); floatCost(fx, tw.x, tw.z, String(cost), 0xff5c6b); } // show the price you're short on
+        } else { bounce(tw.g); sfx.splat(); floatCost(fx, tw.x, tw.z, fmtCost(cost), 0xff5c6b); } // show the price you're short on
       }
     }
     function onDown(e: PointerEvent) { pd = { x: e.clientX, y: e.clientY, moved: false }; }
@@ -541,11 +560,16 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       tw.flicker += dt * 11;
       if (tw.light) tw.light.intensity = (5 + tw.level * 1.6) * (0.78 + 0.22 * Math.sin(tw.flicker) + 0.08 * Math.sin(tw.flicker * 2.7));
       // "can upgrade now" cue — a bobbing gold up-arrow when you can afford it
-      const canUp = !isAttract && tw.level < TOWER_MAX_LVL && st.cash >= UPGRADE_COST(tw.level);
-      tw.upArrow.visible = canUp;
-      if (canUp) {
-        tw.upArrow.position.y = 2.12 + Math.sin(st.time * 4 + tw.x) * 0.09;
-        const p = 1 + 0.1 * Math.sin(st.time * 6);
+      // always show the next-upgrade cost when below the ceiling — BRIGHT + bobbing
+      // when you can afford it, DIMMED + still when you can't (so a cost wall reads
+      // as "needs more souls", never as a broken/locked tower).
+      const notMax = !isAttract && tw.level < TOWER_MAX_LVL;
+      tw.upArrow.visible = notMax;
+      if (notMax) {
+        const afford = st.cash >= UPGRADE_COST(tw.level);
+        (tw.upArrow.material as THREE.SpriteMaterial).opacity = afford ? 1 : 0.4;
+        tw.upArrow.position.y = 2.12 + (afford ? Math.sin(st.time * 4 + tw.x) * 0.09 : 0);
+        const p = afford ? 1 + 0.1 * Math.sin(st.time * 6) : 0.78;
         tw.upArrow.scale.set(0.92 * p, 0.69 * p, 1);
       }
       // in-range enemy that is furthest along the path (closest to the crypt)
@@ -940,8 +964,7 @@ function rebuildHead(tw: Tower) {
   if (shape === 'flame') flameHead(head, lv, col);
   else if (shape === 'crystal') crystalHead(head, lv, col);
   else mortarHead(head, lv, col);
-  // past the top silhouette, keep swelling the head so deep levels still feel earned
-  head.scale.setScalar(tw.level > TOWER_VFORM_MAX ? 1 + Math.min(8, tw.level - TOWER_VFORM_MAX) * 0.05 : 1);
+  head.scale.setScalar(1); // keep the head anchored — deep levels read via the LV badge + brighter light
 }
 // a forward jet of rounded flame puffs from origin ox, fanning at angle ang
 function flameJet(head: THREE.Group, ox: number, ang: number, reach: number, puffs: number, col: number) {
@@ -1008,6 +1031,8 @@ function makeUpArrow(): THREE.Sprite {
   (s as any).__cv = cv; (s as any).__tex = tex;
   return s;
 }
+// keep big upgrade costs short so they never overflow their pill (e.g. 12480 → "12k")
+function fmtCost(n: number): string { return n >= 10000 ? Math.round(n / 1000) + 'k' : String(n); }
 function drawUpArrow(s: THREE.Sprite, cost: number, color: number) {
   const cv = (s as any).__cv as HTMLCanvasElement | undefined; if (!cv) return;
   const ctx = cv.getContext('2d')!;
@@ -1017,7 +1042,7 @@ function drawUpArrow(s: THREE.Sprite, cost: number, color: number) {
   ctx.fillStyle = '#ffd270'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(20,16,8,.8)'; ctx.stroke();
   // cost chip (bottom): a dark pill with the souls number in the tower's colour
   const hex = '#' + color.toString(16).padStart(6, '0');
-  const label = String(cost);
+  const label = fmtCost(cost);
   ctx.font = '800 34px Archivo, system-ui, sans-serif';
   const tw = ctx.measureText(label).width;
   const pillW = tw + 40, pillX = 64 - pillW / 2, pillY = 54, pillH = 38, r = 19;
@@ -1067,35 +1092,32 @@ function punch(g: THREE.Object3D) {
   }
   requestAnimationFrame(step);
 }
-// three little pips that fill in as the tower levels up
+// a level badge over the tower. Since upgrading is endless, a fixed row of dots
+// would lie (implies a 4-cap) — so we just show the actual level number "LV n".
 function makePips(): THREE.Sprite {
-  const cv = document.createElement('canvas'); cv.width = 96; cv.height = 24;
+  const cv = document.createElement('canvas'); cv.width = 128; cv.height = 44;
   const tex = new THREE.CanvasTexture(cv);
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
-  s.scale.set(0.7, 0.18, 1);
+  s.scale.set(0.6, 0.206, 1);
   (s as any).__cv = cv; (s as any).__tex = tex;
   return s;
 }
 function drawPips(s: THREE.Sprite, level: number, color: number) {
   const cv = (s as any).__cv as HTMLCanvasElement; const ctx = cv.getContext('2d')!;
-  ctx.clearRect(0, 0, 96, 24);
+  ctx.clearRect(0, 0, 128, 44);
   const hex = '#' + color.toString(16).padStart(6, '0');
-  if (level <= TOWER_VFORM_MAX) {
-    // up to the top visual form → instant-read dots
-    const max = TOWER_VFORM_MAX;
-    for (let i = 0; i < max; i++) {
-      const cx = 12 + i * (72 / (max - 1 || 1));
-      ctx.beginPath(); ctx.arc(cx, 12, 7, 0, Math.PI * 2);
-      ctx.fillStyle = i < level ? hex : 'rgba(255,255,255,0.18)'; ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.stroke();
-    }
-  } else {
-    // deep levels → a compact "LV n" badge in the tower's colour
-    ctx.font = '800 18px Archivo, system-ui, sans-serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
-    ctx.strokeText('LV ' + level, 48, 13); ctx.fillStyle = hex; ctx.fillText('LV ' + level, 48, 13);
-  }
+  const label = 'LV ' + level;
+  ctx.font = '800 26px Archivo, system-ui, sans-serif';
+  const tw = ctx.measureText(label).width;
+  const pillW = tw + 26, pillX = 64 - pillW / 2, pillY = 8, pillH = 28, r = 14;
+  ctx.beginPath();
+  ctx.moveTo(pillX + r, pillY); ctx.arcTo(pillX + pillW, pillY, pillX + pillW, pillY + pillH, r);
+  ctx.arcTo(pillX + pillW, pillY + pillH, pillX, pillY + pillH, r); ctx.arcTo(pillX, pillY + pillH, pillX, pillY, r);
+  ctx.arcTo(pillX, pillY, pillX + pillW, pillY, r); ctx.closePath();
+  ctx.fillStyle = 'rgba(12,16,22,.82)'; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = hex; ctx.stroke();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = hex; ctx.fillText(label, 64, pillY + pillH / 2 + 1);
   (s as any).__tex.needsUpdate = true;
 }
 function applyTowerLevel(tw: Tower) {
@@ -1118,6 +1140,20 @@ function upgradeTower(tw: Tower) {
   applyTowerLevel(tw);
 }
 
+// mark a boss/elite so it reads instantly: an ominous red rim-glow on the body
+// + a blood-red ground ring dragging under its feet (sized to the scaled model).
+function bossAura(g: THREE.Group) {
+  g.traverse((o) => {
+    const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+    if (m && m.emissive) { m.emissive = new THREE.Color(0xff2a1c); m.emissiveIntensity = 0.32; }
+  });
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(1.05, 1.55, 28),
+    new THREE.MeshBasicMaterial({ color: 0xff3a3a, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; ring.renderOrder = 2;
+  g.add(ring);
+}
 // ─── enemies ────────────────────────────────────────────────────────────────
 function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
   const g = def.make();
@@ -1129,6 +1165,7 @@ function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
   const x = p.x + p.px * laneOff, z = p.z + p.pz * laneOff;
   g.position.set(x, 0, z);
   g.rotation.y = Math.atan2(p.dx, p.dz); // face along the path
+  if (def.boss) bossAura(g); // menacing red rim-glow + a dragging ground ring so elites read instantly
   root.add(g);
   const hpBar = makeHpBar();
   if (def.boss) hpBar.scale.set(1.9, 0.26, 1); // bigger bar for bosses
@@ -1312,10 +1349,16 @@ function ringPulse(fx: THREE.Group, x: number, z: number, color = 0xffd23f) {
   requestAnimationFrame(grow);
 }
 function bounce(g: THREE.Object3D) {
+  // Re-entrancy guard: WITHOUT it, spam-tapping (e.g. a tower you can't afford to
+  // upgrade) restarts the bounce from the already-raised y each time, so the
+  // object ratchets up and floats into the air permanently. Ignore overlaps.
+  const o = g as any;
+  if (o.__bouncing) return;
+  o.__bouncing = true;
   const start = performance.now(); const y0 = g.position.y;
   function b() {
     const e = (performance.now() - start) / 250;
-    if (e >= 1) { g.position.y = y0; return; }
+    if (e >= 1) { g.position.y = y0; o.__bouncing = false; return; }
     g.position.y = y0 + Math.sin(e * Math.PI) * 0.12;
     requestAnimationFrame(b);
   }
@@ -1334,11 +1377,20 @@ function startWave(st: any, onWave: (w: number) => void) {
     const def = pool[Math.floor(Math.random() * pool.length)];
     st.spawnQ.push(def);
   }
-  // a boss leads every 5th night — and the deep nights field a whole pack of them
-  const isBoss = st.wave % 5 === 0;
+  // A boss leads EVERY THIRD night now (3,6,9,12 …) so there's a real threat
+  // early and often. Milestone nights (every 6th) are led by an apex boss; the
+  // others by ELITES — random oversized champions pulled from the whole cast.
+  const isBoss = st.wave % 3 === 0;
   if (isBoss) {
-    const bossCount = 1 + Math.floor(st.wave / 15);         // 1 boss → 2 at night 15 → 3 at 30 …
-    for (let b = 0; b < bossCount; b++) st.spawnQ.unshift(BOSSES[(st.wave / 5 - 1 + b) % BOSSES.length]);
+    const bossCount = 1 + Math.floor(st.wave / 9);          // 1 → 2 by night 9 → 3 by 18 …
+    for (let b = 0; b < bossCount; b++) {
+      if (st.wave % 6 === 0 && b === 0) {
+        st.spawnQ.unshift(BOSSES[(st.wave / 6 - 1) % BOSSES.length]); // apex horror leads the milestone
+      } else {
+        const base = pool[Math.floor(Math.random() * pool.length)];
+        st.spawnQ.unshift(eliteFrom(base));                 // any cast member, scaled-up + buffed
+      }
+    }
   }
   st.spawnT = 0.3;
   sfx.wave();
