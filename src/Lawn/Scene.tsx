@@ -500,7 +500,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       // damage flinch — white flash + brief freeze (hit-stop)
       if (en.hitFlash > 0) {
         en.hitFlash -= dt;
-        setEmissiveAll(en.g, Math.max(0, en.hitFlash / 0.15) * 0.9);
+        setEmissiveAll(en.g, Math.max(0, en.hitFlash / 0.15) * 0.22); // very subtle white tick, not a white-out
         en.flashOn = true;
       } else if (en.flashOn) { setEmissiveAll(en.g, 0); en.flashOn = false; }
       let spd = en.spd;
