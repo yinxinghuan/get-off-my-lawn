@@ -1,9 +1,13 @@
-// Procedural WebAudio SFX — no asset files. Lazily unlocked on first tap.
+// Procedural WebAudio SFX — no asset files.
+// The feed PRELOADS the next game (it may be mounted + running the attract demo
+// while the user is still on another game). So we stay totally silent until the
+// player's first real interaction with THIS game: `armed` gates every sound.
 let ctx: AudioContext | null = null;
 let muted = false;
+let armed = false;
 
 function ac(): AudioContext | null {
-  if (muted) return null;
+  if (muted || !armed) return null;
   if (!ctx) {
     try { ctx = new (window.AudioContext || (window as any).webkitAudioContext)(); }
     catch { return null; }
@@ -12,7 +16,8 @@ function ac(): AudioContext | null {
   return ctx;
 }
 
-export function unlockAudio() { ac(); }
+// called on the player's first tap (startGame) — arms audio + unlocks the context
+export function unlockAudio() { armed = true; ac(); }
 export function setMuted(m: boolean) { muted = m; }
 export function isMuted() { return muted; }
 
