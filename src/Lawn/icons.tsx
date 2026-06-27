@@ -49,8 +49,8 @@ export function Sound({ on, size = 20 }: { on: boolean; size?: number }) {
 export function Flame({ size = 22 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>
-      <path d="M13 2.5c.7 2.7-.4 4.5-1.9 6.1-1.5 1.6-3.3 3-3.3 5.9a5.2 5.2 0 0 0 10.4 0c0-2-.9-3.6-1.8-4.9-.4 1-1.1 1.6-2 1.9.9-2.6.2-5.6-1.4-9z" fill="#8ff0c4" />
-      <path d="M12 11.5c1 1.3 1.6 2.4 1.6 3.5a1.7 1.7 0 0 1-3.4 0c0-1 .8-2.1 1.8-3.5z" fill="#fff6d6" />
+      <path d="M13 2.5c.7 2.7-.4 4.5-1.9 6.1-1.5 1.6-3.3 3-3.3 5.9a5.2 5.2 0 0 0 10.4 0c0-2-.9-3.6-1.8-4.9-.4 1-1.1 1.6-2 1.9.9-2.6.2-5.6-1.4-9z" fill="#ff9a4c" />
+      <path d="M12 11.5c1 1.3 1.6 2.4 1.6 3.5a1.7 1.7 0 0 1-3.4 0c0-1 .8-2.1 1.8-3.5z" fill="#ffe8b0" />
     </svg>
   );
 }

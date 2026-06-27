@@ -156,7 +156,12 @@ interface Tower {
   light?: THREE.PointLight; flicker: number;
 }
 interface Plot { x: number; z: number; disc: THREE.Mesh; marker: THREE.Group; ring: THREE.Mesh; ghost: THREE.Group; tower: Tower | null; }
-interface Proj { g: THREE.Mesh; x: number; y: number; z: number; tx: number; ty: number; tz: number; target: Enemy; dmg: number; slow: number; splash: number; color: number; }
+interface Proj {
+  g: THREE.Mesh; x: number; y: number; z: number; tx: number; ty: number; tz: number;
+  target: Enemy; dmg: number; slow: number; splash: number; color: number;
+  arc: boolean; t: number; flight: number;                 // ballistic (mortar) lob
+  sx: number; sy: number; sz: number; ex: number; ey: number; ez: number; arcH: number;
+}
 
 export interface HudState { lives: number; cash: number; score: number; wave: number; towers: number; }
 export interface SceneHandle { restart: () => void; }
@@ -547,27 +552,42 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
 
     // ── projectiles ──
     for (const pr of st.projs) {
+      if (pr.arc) {
+        // MORTAR — ballistic lob to the ground spot, then a big splash blast
+        pr.t += dt / pr.flight;
+        if (pr.t >= 1) {
+          splashHit(st, root, pr.ex, pr.ez, pr.splash, pr.dmg, pr.slow);
+          ringPulse(fx, pr.ex, pr.ez, pr.color);
+          splash(fx, pr.ex, 0.4, pr.ez, pr.color); splash(fx, pr.ex, 0.4, pr.ez, pr.color);
+          pr.x = 1e9;
+        } else {
+          const u = pr.t;
+          pr.x = pr.sx + (pr.ex - pr.sx) * u;
+          pr.z = pr.sz + (pr.ez - pr.sz) * u;
+          pr.y = pr.sy + (pr.ey - pr.sy) * u + pr.arcH * Math.sin(u * Math.PI);
+          pr.g.position.set(pr.x, pr.y, pr.z);
+          pr.g.rotation.x += dt * 9; pr.g.rotation.z += dt * 6; // tumbling shell
+        }
+        continue;
+      }
+      // FIRE / FROST — home in fast on the target
       const en = pr.target;
       if (!en.dead) { pr.tx = en.x; pr.tz = en.z; pr.ty = 0.5; }
       const dx = pr.tx - pr.x, dy = pr.ty - pr.y, dz = pr.tz - pr.z;
       const d = Math.hypot(dx, dy, dz);
-      const step = 16 * dt;
+      const step = 18 * dt;
       if (d <= step || en.dead) {
-        // impact
-        if (pr.splash > 0) {
-          // mortar: area blast at the impact point (hits everyone nearby)
-          splashHit(st, root, pr.x, pr.z, pr.splash, pr.dmg, pr.slow);
-          ringPulse(fx, pr.x, pr.z, pr.color);
-        } else if (!en.dead) {
+        if (!en.dead) {
           en.hp -= pr.dmg; en.slow = Math.max(en.slow, pr.slow); hitReact(en);
           if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
           if (en.hp <= 0) killEnemy(st, en, root);
         }
         splash(fx, pr.x, 0.4, pr.z, pr.color);
-        pr.x = 1e9; // mark for removal
+        pr.x = 1e9;
       } else {
         pr.x += (dx / d) * step; pr.y += (dy / d) * step; pr.z += (dz / d) * step;
         pr.g.position.set(pr.x, pr.y, pr.z);
+        pr.g.lookAt(pr.tx, pr.ty, pr.tz); // orient the icy shard along its flight
       }
     }
     // cull
@@ -822,9 +842,9 @@ export interface TowerType {
   blurb: string;
 }
 export const TOWER_TYPES: TowerType[] = [
-  { id: 'brazier', name: 'Brazier', cost: 80, color: 0x6fe0a0, range: 2.8, dmg: 9, rate: 1.8, slow: 0.4, splash: 0, head: 'flame', blurb: 'Steady spectral fire' },
-  { id: 'frost', name: 'Frost Lamp', cost: 110, color: 0x6fd6ec, range: 2.7, dmg: 4, rate: 1.5, slow: 1.9, splash: 0, head: 'crystal', blurb: 'Chills — slows the dead' },
-  { id: 'mortar', name: 'Bone Mortar', cost: 160, color: 0xc79bf0, range: 3.1, dmg: 16, rate: 0.75, slow: 0.3, splash: 1.3, head: 'mortar', blurb: 'Heavy splash blast' },
+  { id: 'brazier', name: 'Fire Cannon', cost: 80, color: 0xff7a2c, range: 2.8, dmg: 9, rate: 1.9, slow: 0.3, splash: 0, head: 'flame', blurb: 'Fast fireballs' },
+  { id: 'frost', name: 'Frost Lance', cost: 110, color: 0x9fe0ff, range: 2.7, dmg: 4, rate: 1.5, slow: 2.0, splash: 0, head: 'crystal', blurb: 'Icy shards — slows' },
+  { id: 'mortar', name: 'Bone Mortar', cost: 160, color: 0xc79bf0, range: 3.2, dmg: 16, rate: 0.7, slow: 0.3, splash: 1.4, head: 'mortar', blurb: 'Lobbed splash blast' },
 ];
 
 function plantTower(root: THREE.Group, plot: Plot, typeIdx: number): Tower {
@@ -858,45 +878,49 @@ function emis(m: THREE.Mesh, color: number, ei: number) {
   const mm = m.material as THREE.MeshStandardMaterial;
   mm.emissive = new THREE.Color(color); mm.emissiveIntensity = ei; m.castShadow = false;
 }
-// rebuild the head shape for the tower's type + level (so upgrades change the form)
+// a cone whose TIP points forward (+z), at (x,y) with base at depth z0
+function coneZ(head: THREE.Group, r: number, len: number, color: number, x: number, y: number, z0: number, ei: number) {
+  const c = cone(r, len, 8, color, 0, 0, 0);
+  c.rotation.x = Math.PI / 2; c.position.set(x, y, z0 + len / 2);
+  emis(c, color, ei); head.add(c); return c;
+}
+// rebuild the DIRECTIONAL turret head per type + level — every weapon points its
+// barrel/emitter forward (+z) so it visibly swivels to aim, and its form clearly
+// grows/changes each upgrade (not just scale).
 function rebuildHead(tw: Tower) {
   const head = tw.head;
   for (const c of [...head.children]) { head.remove(c); disposeGroup(c); }
   const shape = TOWER_TYPES[tw.type].head, lv = tw.level, col = tw.color;
+  const yoke = cyl(0.17, 0.2, 0.16, 8, 0x3a3d36, 0, 0, 0); flatify(yoke); head.add(yoke); // swivel base
   if (shape === 'flame') {
-    const tall = 0.4 + lv * 0.14;
-    const main = cone(0.16 + lv * 0.02, tall, 8, col, 0, tall / 2, 0); head.add(main); emis(main, col, 1.6);
+    // FIRE CANNON — a forward nozzle that belches a flame plume
+    const nlen = 0.26 + lv * 0.06;
+    const noz = cyl(0.1, 0.15 + lv * 0.02, nlen, 8, 0x23241f, 0, 0.04, 0); noz.rotation.x = Math.PI / 2; noz.position.z = nlen / 2; flatify(noz); head.add(noz);
+    coneZ(head, 0.14 + lv * 0.025, 0.3 + lv * 0.1, col, 0, 0.04, nlen, 1.7);          // main flame
     for (let i = 0; i < lv - 1; i++) {
-      const a = (i / Math.max(1, lv - 1)) * Math.PI * 2;
-      const tc = cone(0.08, tall * 0.55, 6, col, Math.cos(a) * 0.17, tall * 0.32, Math.sin(a) * 0.17);
-      head.add(tc); emis(tc, col, 1.4);
+      coneZ(head, 0.07, 0.2 + lv * 0.03, col, (i % 2 ? 1 : -1) * 0.1, 0.04 + (i > 1 ? 0.1 : -0.06), nlen - 0.02, 1.4);
     }
-    if (lv >= 4) { const crown = ball(0.1, 0xfff3d6, 0, tall + 0.04, 0, 1); head.add(crown); emis(crown, col, 1.9); }
+    if (lv >= 4) { const cr = ball(0.11, 0xfff0c0, 0, 0.04, nlen + 0.34, 1); cr.castShadow = false; emis(cr, col, 2.0); head.add(cr); }
   } else if (shape === 'crystal') {
-    const s = 0.3 + lv * 0.07;
-    diamond(head, s, 0, 0.32, 0, col);
+    // FROST LANCE — a forward crystal spike, more shards each level
+    coneZ(head, 0.11 + lv * 0.018, 0.4 + lv * 0.11, col, 0, 0.05, 0.04, 1.5);          // main lance
     const shards = Math.min(lv - 1, 4);
     for (let i = 0; i < shards; i++) {
       const a = (i / shards) * Math.PI * 2;
-      diamond(head, s * 0.5, Math.cos(a) * 0.2, 0.18, Math.sin(a) * 0.2, col);
+      coneZ(head, 0.06, 0.22, col, Math.cos(a) * 0.14, 0.05 + Math.sin(a) * 0.1, 0.0, 1.2);
     }
-  } else { // mortar — chunky cannon barrels
-    const block = box(0.36, 0.18, 0.36, 0x3a3d36, 0, 0.05, 0); flatify(block); head.add(block);
-    const barrels = Math.min(lv, 3);
-    const len = 0.34 + lv * 0.07;
+    if (lv >= 4) { const fr = cyl(0.24, 0.24, 0.05, 12, col, 0, 0.05, 0); fr.rotation.x = Math.PI / 2; fr.position.z = 0.12; emis(fr, col, 0.7); head.add(fr); }
+  } else {
+    // BONE MORTAR — forward+up barrel(s) that lob shells; more barrels each level
+    const barrels = Math.min(lv, 3), len = 0.34 + lv * 0.07;
+    const breech = box(0.34, 0.2, 0.3, 0x3a3d36, 0, 0.04, -0.04); flatify(breech); head.add(breech);
     for (let i = 0; i < barrels; i++) {
-      const bx = (i - (barrels - 1) / 2) * 0.14;
-      const bar = cyl(0.1, 0.13, len, 10, 0x23241f, bx, 0.12 + len * 0.28, 0.05); bar.rotation.x = -0.55; flatify(bar); head.add(bar);
-      const ember = ball(0.07, col, bx, 0.12 + len * 0.5, 0.05 + len * 0.32, 1); head.add(ember); emis(ember, col, 1.7);
+      const bx = (i - (barrels - 1) / 2) * 0.15;
+      const bar = cyl(0.1, 0.13, len, 10, 0x23241f, bx, 0.1 + len * 0.2, len * 0.3); bar.rotation.x = -0.7; flatify(bar); head.add(bar);
+      const ember = ball(0.07, col, bx, 0.1 + len * 0.38, len * 0.56, 1); ember.castShadow = false; emis(ember, col, 1.7); head.add(ember);
     }
-    if (lv >= 4) { const ring2 = cyl(0.42, 0.42, 0.06, 12, 0x4a4d45, 0, 0.02, 0); flatify(ring2); head.add(ring2); }
+    if (lv >= 4) { const ring2 = cyl(0.44, 0.44, 0.06, 12, 0x4a4d45, 0, -0.04, 0); flatify(ring2); head.add(ring2); }
   }
-}
-// a faceted diamond crystal (up cone + down cone) at (x,y,z)
-function diamond(head: THREE.Group, size: number, x: number, y: number, z: number, color: number) {
-  const up = cone(size * 0.5, size * 0.7, 6, color, x, y + size * 0.32, z);
-  const dn = cone(size * 0.5, size * 0.5, 6, color, x, y - size * 0.22, z); dn.rotation.x = Math.PI;
-  head.add(up); head.add(dn); emis(up, color, 1.2); emis(dn, color, 1.2);
 }
 // gold up-chevron sprite shown over a tower when it can be upgraded
 function makeUpArrow(): THREE.Sprite {
@@ -998,13 +1022,26 @@ function killEnemy(st: any, en: Enemy, _root: THREE.Group) {
 // ─── projectiles + fx ───────────────────────────────────────────────────────
 function fireWater(fx: THREE.Group, st: any, tw: Tower, target: Enemy) {
   const col = tw.color;
-  const g = ball(tw.splash > 0 ? 0.2 : 0.14, col, 0, 0, 0, 1);
-  const gm = g.material as THREE.MeshStandardMaterial;
-  gm.emissive = new THREE.Color(col); gm.emissiveIntensity = 1.6;
-  g.castShadow = false;
-  g.position.set(tw.x, 1.0, tw.z);
-  fx.add(g);
-  st.projs.push({ g, x: tw.x, y: 1.0, z: tw.z, tx: target.x, ty: 0.5, tz: target.z, target, dmg: tw.dmg, slow: tw.slow, splash: tw.splash, color: col });
+  // spawn from the barrel muzzle (forward of the swivelled head)
+  const fxd = Math.sin(tw.yaw), fzd = Math.cos(tw.yaw);
+  const mx = tw.x + fxd * 0.5, mz = tw.z + fzd * 0.5, my = 1.05;
+  const base = { target, dmg: tw.dmg, slow: tw.slow, splash: tw.splash, color: col,
+    tx: target.x, ty: 0.5, tz: target.z, x: mx, y: my, z: mz };
+  if (tw.splash > 0) {
+    // MORTAR — a lobbed shell arcing onto the target's ground spot, then it bursts
+    const g = ball(0.2, col, mx, my, mz, 1); emis(g, col, 1.5); fx.add(g);
+    const ex = target.x, ez = target.z;
+    const dist = Math.hypot(ex - mx, ez - mz);
+    st.projs.push({ ...base, g, arc: true, t: 0, flight: Math.max(0.4, dist / 6.5),
+      sx: mx, sy: my, sz: mz, ex, ey: 0.35, ez, arcH: 1.1 + dist * 0.22 });
+  } else {
+    // FIRE = round fireball; FROST = elongated icy shard (both home in fast)
+    const shard = TOWER_TYPES[tw.type].head === 'crystal';
+    const g = ball(shard ? 0.1 : 0.15, col, mx, my, mz, shard ? 0 : 1);
+    if (shard) g.scale.set(0.6, 0.6, 2.4);
+    emis(g, col, 1.6); fx.add(g);
+    st.projs.push({ ...base, g, arc: false, t: 0, flight: 0, sx: 0, sy: 0, sz: 0, ex: 0, ey: 0, ez: 0, arcH: 0 });
+  }
 }
 
 interface Particle { m: THREE.Mesh; vx: number; vy: number; vz: number; life: number; }
