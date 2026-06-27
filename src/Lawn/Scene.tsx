@@ -152,13 +152,13 @@ interface Enemy {
 interface Tower {
   g: THREE.Group; head: THREE.Group; ring: THREE.Mesh; pips: THREE.Sprite; upArrow: THREE.Sprite;
   type: number; color: number; x: number; z: number; level: number;
-  range: number; dmg: number; rate: number; slow: number; splash: number; cd: number; yaw: number;
+  range: number; dmg: number; rate: number; slow: number; splash: number; chillR: number; cd: number; yaw: number;
   light?: THREE.PointLight; flicker: number;
 }
 interface Plot { x: number; z: number; disc: THREE.Mesh; marker: THREE.Group; ring: THREE.Mesh; ghost: THREE.Group; tower: Tower | null; }
 interface Proj {
   g: THREE.Mesh; x: number; y: number; z: number; tx: number; ty: number; tz: number;
-  target: Enemy; dmg: number; slow: number; splash: number; color: number;
+  target: Enemy; dmg: number; slow: number; splash: number; color: number; chill: number;
   arc: boolean; t: number; flight: number;                 // ballistic (mortar) lob
   sx: number; sy: number; sz: number; ex: number; ey: number; ez: number; arcH: number;
 }
@@ -545,7 +545,8 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
         if (tw.cd <= 0) {
           tw.cd = 1 / tw.rate;
           fireWater(fx, st, tw, best);
-          sfx.squirt();
+          const k = TOWER_TYPES[tw.type].head;
+          if (k === 'flame') sfx.fire(); else if (k === 'crystal') sfx.frost(); else sfx.mortar();
         }
       }
     }
@@ -559,6 +560,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
           splashHit(st, root, pr.ex, pr.ez, pr.splash, pr.dmg, pr.slow);
           ringPulse(fx, pr.ex, pr.ez, pr.color);
           splash(fx, pr.ex, 0.4, pr.ez, pr.color); splash(fx, pr.ex, 0.4, pr.ez, pr.color);
+          sfx.boom();
           pr.x = 1e9;
         } else {
           const u = pr.t;
@@ -581,6 +583,15 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
           en.hp -= pr.dmg; en.slow = Math.max(en.slow, pr.slow); hitReact(en);
           if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
           if (en.hp <= 0) killEnemy(st, en, root);
+        }
+        // FROST chills a small area — slow (no damage) everyone nearby + a frost ring
+        if (pr.chill > 0) {
+          for (const e of st.enemies) {
+            if (e.dead || e === en) continue;
+            const cx = e.x - pr.x, cz = e.z - pr.z;
+            if (cx * cx + cz * cz <= pr.chill * pr.chill) e.slow = Math.max(e.slow, pr.slow);
+          }
+          ringPulse(fx, pr.x, pr.z, pr.color);
         }
         splash(fx, pr.x, 0.4, pr.z, pr.color);
         pr.x = 1e9;
@@ -837,24 +848,36 @@ function makePlot(x: number, z: number): Plot {
 // ── Weapon types — three clear roles (the build tray shows these) ────────────
 export interface TowerType {
   id: string; name: string; cost: number; color: number;
-  range: number; dmg: number; rate: number; slow: number; splash: number;
+  range: number; dmg: number; rate: number; slow: number; splash: number; chillR: number;
   head: 'flame' | 'crystal' | 'mortar';
   blurb: string;
 }
 export const TOWER_TYPES: TowerType[] = [
-  { id: 'brazier', name: 'Fire Cannon', cost: 80, color: 0xff7a2c, range: 2.8, dmg: 9, rate: 1.9, slow: 0.3, splash: 0, head: 'flame', blurb: 'Fast fireballs' },
-  { id: 'frost', name: 'Frost Lance', cost: 110, color: 0x9fe0ff, range: 2.7, dmg: 4, rate: 1.5, slow: 2.0, splash: 0, head: 'crystal', blurb: 'Icy shards — slows' },
-  { id: 'mortar', name: 'Bone Mortar', cost: 160, color: 0xc79bf0, range: 3.2, dmg: 16, rate: 0.7, slow: 0.3, splash: 1.4, head: 'mortar', blurb: 'Lobbed splash blast' },
+  // fast cheap single-target DPS
+  { id: 'brazier', name: 'Fire Cannon', cost: 80, color: 0xff7a2c, range: 2.7, dmg: 7, rate: 3.0, slow: 0.2, splash: 0, chillR: 0, head: 'flame', blurb: 'Rapid fireballs' },
+  // control: low damage, strong slow + chills a small area
+  { id: 'frost', name: 'Frost Lance', cost: 110, color: 0x9fe0ff, range: 2.7, dmg: 4, rate: 1.1, slow: 2.4, splash: 0, chillR: 1.2, head: 'crystal', blurb: 'Slows & chills' },
+  // heavy slow-firing artillery: lobbed AoE blast
+  { id: 'mortar', name: 'Bone Mortar', cost: 160, color: 0xc79bf0, range: 3.3, dmg: 22, rate: 0.55, slow: 0.3, splash: 1.5, chillR: 0, head: 'mortar', blurb: 'Lobbed splash blast' },
 ];
 
 function plantTower(root: THREE.Group, plot: Plot, typeIdx: number): Tower {
   const T = TOWER_TYPES[typeIdx];
   const g = new THREE.Group();
   g.position.set(plot.x, 0, plot.z);
-  const base = cyl(0.46, 0.54, 0.22, 8, 0x474b46, 0, 0.11, 0); flatify(base); g.add(base);
-  const post = cyl(0.12, 0.14, 0.5, 8, 0x2a2c29, 0, 0.46, 0); flatify(post); g.add(post);
-  const bowl = cyl(0.3, 0.2, 0.2, 10, 0x33352f, 0, 0.78, 0); flatify(bowl); g.add(bowl);
-  const head = new THREE.Group(); head.position.y = 0.9; g.add(head); // shape rebuilt per type+level
+  const plinth = cyl(0.46, 0.54, 0.2, 8, 0x474b46, 0, 0.1, 0); flatify(plinth); g.add(plinth);
+  const post = cyl(0.12, 0.14, 0.44, 8, 0x2a2c29, 0, 0.42, 0); flatify(post); g.add(post);
+  // the MOUNT differs by weapon so each reads as a different object, not a clone
+  if (T.head === 'flame') {            // a wide iron brazier pit
+    const bowl = cyl(0.36, 0.22, 0.2, 12, 0x23241f, 0, 0.72, 0); flatify(bowl); g.add(bowl);
+    const lip = cyl(0.38, 0.36, 0.06, 12, 0x3a3d36, 0, 0.82, 0); flatify(lip); g.add(lip);
+  } else if (T.head === 'crystal') {   // a tapered stone pillar
+    const pil = box(0.26, 0.34, 0.26, 0x3c4248, 0, 0.66, 0); flatify(pil); g.add(pil);
+    const cap = cone(0.22, 0.16, 4, 0x4a5158, 0, 0.9, 0); flatify(cap); g.add(cap);
+  } else {                              // a heavy armoured gun platform
+    const blk = box(0.46, 0.22, 0.46, 0x3a3d36, 0, 0.7, 0); flatify(blk); g.add(blk);
+  }
+  const head = new THREE.Group(); head.position.y = T.head === 'flame' ? 0.78 : 0.86; g.add(head);
   const light = new THREE.PointLight(T.color, 6, 3.4, 2);
   light.position.set(0, 1.0, 0); light.castShadow = false; g.add(light);
   const ring = new THREE.Mesh(
@@ -867,7 +890,7 @@ function plantTower(root: THREE.Group, plot: Plot, typeIdx: number): Tower {
   root.add(g);
   const tw: Tower = {
     g, head, ring, pips, upArrow, type: typeIdx, x: plot.x, z: plot.z, level: 1,
-    range: T.range, dmg: T.dmg, rate: T.rate, slow: T.slow, splash: T.splash,
+    range: T.range, dmg: T.dmg, rate: T.rate, slow: T.slow, splash: T.splash, chillR: T.chillR,
     color: T.color, cd: 0, yaw: 0, light, flicker: Math.random() * 6,
   };
   applyTowerLevel(tw);
@@ -878,46 +901,49 @@ function emis(m: THREE.Mesh, color: number, ei: number) {
   const mm = m.material as THREE.MeshStandardMaterial;
   mm.emissive = new THREE.Color(color); mm.emissiveIntensity = ei; m.castShadow = false;
 }
-// a cone whose TIP points forward (+z), at (x,y) with base at depth z0
-function coneZ(head: THREE.Group, r: number, len: number, color: number, x: number, y: number, z0: number, ei: number) {
-  const c = cone(r, len, 8, color, 0, 0, 0);
-  c.rotation.x = Math.PI / 2; c.position.set(x, y, z0 + len / 2);
-  emis(c, color, ei); head.add(c); return c;
+// a sharp faceted ice spike (4-sided pyramid up + short pyramid down = a crystal)
+function crystalSpike(head: THREE.Group, r: number, h: number, x: number, y: number, z: number, color: number, tilt = 0) {
+  const up = cone(r, h, 4, color, x, y + h * 0.3, z);
+  const dn = cone(r, h * 0.42, 4, color, x, y - h * 0.08, z); dn.rotation.z = Math.PI;
+  if (tilt) { up.rotation.z = Math.cos(tilt) * 0.34; up.rotation.x = Math.sin(tilt) * 0.34; }
+  up.rotation.y = 0.6; dn.rotation.y = 0.6;
+  emis(up, color, 1.35); emis(dn, color, 1.35); head.add(up); head.add(dn);
 }
-// rebuild the DIRECTIONAL turret head per type + level — every weapon points its
-// barrel/emitter forward (+z) so it visibly swivels to aim, and its form clearly
-// grows/changes each upgrade (not just scale).
+// rebuild the head per type + level. Each weapon has a DISTINCT silhouette:
+// fire = round billowing flames, frost = angular crystals, mortar = cannon barrels.
 function rebuildHead(tw: Tower) {
   const head = tw.head;
   for (const c of [...head.children]) { head.remove(c); disposeGroup(c); }
   const shape = TOWER_TYPES[tw.type].head, lv = tw.level, col = tw.color;
-  const yoke = cyl(0.17, 0.2, 0.16, 8, 0x3a3d36, 0, 0, 0); flatify(yoke); head.add(yoke); // swivel base
   if (shape === 'flame') {
-    // FIRE CANNON — a forward nozzle that belches a flame plume
-    const nlen = 0.26 + lv * 0.06;
-    const noz = cyl(0.1, 0.15 + lv * 0.02, nlen, 8, 0x23241f, 0, 0.04, 0); noz.rotation.x = Math.PI / 2; noz.position.z = nlen / 2; flatify(noz); head.add(noz);
-    coneZ(head, 0.14 + lv * 0.025, 0.3 + lv * 0.1, col, 0, 0.04, nlen, 1.7);          // main flame
-    for (let i = 0; i < lv - 1; i++) {
-      coneZ(head, 0.07, 0.2 + lv * 0.03, col, (i % 2 ? 1 : -1) * 0.1, 0.04 + (i > 1 ? 0.1 : -0.06), nlen - 0.02, 1.4);
+    // FIRE — a cluster of rounded, billowing flame puffs (organic, NOT a cone)
+    const n = 3 + (lv - 1);
+    for (let i = 0; i < n; i++) {
+      const t = i / Math.max(1, n - 1);
+      const r = (0.21 - t * 0.1) * (1 + (lv - 1) * 0.1);
+      const fy = t * 0.5 * (1 + (lv - 1) * 0.08);
+      const fz = ((i % 3) - 1) * 0.07;
+      const fxo = (i % 2 ? 1 : -1) * 0.1 * (1 - t);
+      const warm = t > 0.55;
+      const fb = ball(r, warm ? 0xffd27a : col, fxo, fy, fz, 1); fb.castShadow = false;
+      emis(fb, warm ? 0xffd27a : col, 1.7); head.add(fb);
     }
-    if (lv >= 4) { const cr = ball(0.11, 0xfff0c0, 0, 0.04, nlen + 0.34, 1); cr.castShadow = false; emis(cr, col, 2.0); head.add(cr); }
   } else if (shape === 'crystal') {
-    // FROST LANCE — a forward crystal spike, more shards each level
-    coneZ(head, 0.11 + lv * 0.018, 0.4 + lv * 0.11, col, 0, 0.05, 0.04, 1.5);          // main lance
-    const shards = Math.min(lv - 1, 4);
+    // FROST — a cluster of sharp faceted ice crystals (geometric, angular)
+    crystalSpike(head, 0.15 + (lv - 1) * 0.025, 0.5 + (lv - 1) * 0.12, 0, 0.3, 0, col);
+    const shards = 2 + (lv - 1);
     for (let i = 0; i < shards; i++) {
       const a = (i / shards) * Math.PI * 2;
-      coneZ(head, 0.06, 0.22, col, Math.cos(a) * 0.14, 0.05 + Math.sin(a) * 0.1, 0.0, 1.2);
+      crystalSpike(head, 0.08, 0.26 + (lv - 1) * 0.04, Math.cos(a) * 0.17, 0.12, Math.sin(a) * 0.17, col, a);
     }
-    if (lv >= 4) { const fr = cyl(0.24, 0.24, 0.05, 12, col, 0, 0.05, 0); fr.rotation.x = Math.PI / 2; fr.position.z = 0.12; emis(fr, col, 0.7); head.add(fr); }
   } else {
-    // BONE MORTAR — forward+up barrel(s) that lob shells; more barrels each level
+    // MORTAR — forward+up cannon barrel(s)
     const barrels = Math.min(lv, 3), len = 0.34 + lv * 0.07;
-    const breech = box(0.34, 0.2, 0.3, 0x3a3d36, 0, 0.04, -0.04); flatify(breech); head.add(breech);
+    const breech = box(0.34, 0.2, 0.3, 0x3a3d36, 0, 0.06, -0.04); flatify(breech); head.add(breech);
     for (let i = 0; i < barrels; i++) {
       const bx = (i - (barrels - 1) / 2) * 0.15;
-      const bar = cyl(0.1, 0.13, len, 10, 0x23241f, bx, 0.1 + len * 0.2, len * 0.3); bar.rotation.x = -0.7; flatify(bar); head.add(bar);
-      const ember = ball(0.07, col, bx, 0.1 + len * 0.38, len * 0.56, 1); ember.castShadow = false; emis(ember, col, 1.7); head.add(ember);
+      const bar = cyl(0.1, 0.13, len, 10, 0x23241f, bx, 0.12 + len * 0.2, len * 0.3); bar.rotation.x = -0.7; flatify(bar); head.add(bar);
+      const ember = ball(0.07, col, bx, 0.12 + len * 0.38, len * 0.56, 1); ember.castShadow = false; emis(ember, col, 1.7); head.add(ember);
     }
     if (lv >= 4) { const ring2 = cyl(0.44, 0.44, 0.06, 12, 0x4a4d45, 0, -0.04, 0); flatify(ring2); head.add(ring2); }
   }
@@ -1025,7 +1051,7 @@ function fireWater(fx: THREE.Group, st: any, tw: Tower, target: Enemy) {
   // spawn from the barrel muzzle (forward of the swivelled head)
   const fxd = Math.sin(tw.yaw), fzd = Math.cos(tw.yaw);
   const mx = tw.x + fxd * 0.5, mz = tw.z + fzd * 0.5, my = 1.05;
-  const base = { target, dmg: tw.dmg, slow: tw.slow, splash: tw.splash, color: col,
+  const base = { target, dmg: tw.dmg, slow: tw.slow, splash: tw.splash, chill: tw.chillR, color: col,
     tx: target.x, ty: 0.5, tz: target.z, x: mx, y: my, z: mz };
   if (tw.splash > 0) {
     // MORTAR — a lobbed shell arcing onto the target's ground spot, then it bursts
