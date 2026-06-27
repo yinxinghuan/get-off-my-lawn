@@ -1140,20 +1140,6 @@ function upgradeTower(tw: Tower) {
   applyTowerLevel(tw);
 }
 
-// mark a boss/elite so it reads instantly: an ominous red rim-glow on the body
-// + a blood-red ground ring dragging under its feet (sized to the scaled model).
-function bossAura(g: THREE.Group) {
-  g.traverse((o) => {
-    const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-    if (m && m.emissive) { m.emissive = new THREE.Color(0xff2a1c); m.emissiveIntensity = 0.32; }
-  });
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(1.05, 1.55, 28),
-    new THREE.MeshBasicMaterial({ color: 0xff3a3a, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }),
-  );
-  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; ring.renderOrder = 2;
-  g.add(ring);
-}
 // ─── enemies ────────────────────────────────────────────────────────────────
 function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
   const g = def.make();
@@ -1165,7 +1151,6 @@ function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
   const x = p.x + p.px * laneOff, z = p.z + p.pz * laneOff;
   g.position.set(x, 0, z);
   g.rotation.y = Math.atan2(p.dx, p.dz); // face along the path
-  if (def.boss) bossAura(g); // menacing red rim-glow + a dragging ground ring so elites read instantly
   root.add(g);
   const hpBar = makeHpBar();
   if (def.boss) hpBar.scale.set(1.9, 0.26, 1); // bigger bar for bosses
