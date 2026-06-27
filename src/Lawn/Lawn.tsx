@@ -169,12 +169,16 @@ export function Lawn() {
           <div className="gol-hud gol-lives">
             {[0, 1, 2, 3, 4].map((i) => <Candle key={i} lit={i < hud.lives} />)}
           </div>
+          {/* souls = the WALLET you spend on weapons (labelled, so it never reads as the score) */}
           <div className={`gol-hud gol-souls${hud.cash >= sel.cost ? ' gol-souls--ready' : ''}`}>
-            <Skull /> {hud.cash}
+            <Skull /> <span className="gol-souls-n">{hud.cash}</span> <span className="gol-souls-k">{t('souls')}</span>
           </div>
           {champPill('gol-champ--play')}
-          <div className="gol-hud gol-meta">
-            <span className="gol-chip"><b>{t('wave')}</b> <span className="gol-num">{hud.wave || 1}</span> &nbsp;·&nbsp; <span className="gol-num">{hud.score}</span> <b>{t('score')}</b></span>
+          {/* BANISHED = THE score (what the leaderboard ranks) — the hero number, top-centre */}
+          <div className="gol-hud gol-score">
+            <span className="gol-score-n">{hud.score}</span>
+            <span className="gol-score-k">{t('score')}</span>
+            <span className="gol-score-night"><b>{t('wave')}</b> {hud.wave || 1}</span>
           </div>
 
           {/* build guide — until the first weapon is placed: what to do */}

@@ -12,8 +12,12 @@ import { sfx } from './audio';
 // ─── Tuning ────────────────────────────────────────────────────────────────
 const START_CASH = 180;
 const START_LIVES = 5;
-const UPGRADE_COST = (lvl: number) => 55 + lvl * 45; // L1→2:100, →3:145, →4:190 (cheaper, so upgrading competes with new towers)
-const TOWER_MAX_LVL = 4;
+// Upgrade cost ESCALATES geometrically — so souls always have a sink and you can
+// never "finish" maxing everything. The cost wall (not a level cap) is the limit:
+// L1→2:50  →3:80  →4:128  →5:205  →6:328  →7:524  →8:839 …  always something to spend on.
+const UPGRADE_COST = (lvl: number) => Math.round(50 * Math.pow(1.6, lvl - 1));
+const TOWER_MAX_LVL = 20;   // practical ceiling (the cost wall stops you long before this)
+const TOWER_VFORM_MAX = 4;  // the head's silhouette has 4 distinct forms; deeper levels keep the top form (+ grow)
 const ENEMY_SCALE = 0.46;
 
 // ── Regular serpentine grave-path (boustrophedon): straight rows that switch
@@ -330,7 +334,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
           deathBurst(fx, tw.x, tw.z, tw.color);            // upward spark burst
           ringPulse(fx, tw.x, tw.z, tw.color);
           pushHud(st);
-        } else { bounce(tw.g); sfx.splat(); }
+        } else { bounce(tw.g); sfx.splat(); floatCost(fx, tw.x, tw.z, String(cost), 0xff5c6b); } // show the price you're short on
       }
     }
     function onDown(e: PointerEvent) { pd = { x: e.clientX, y: e.clientY, moved: false }; }
@@ -540,9 +544,9 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       const canUp = !isAttract && tw.level < TOWER_MAX_LVL && st.cash >= UPGRADE_COST(tw.level);
       tw.upArrow.visible = canUp;
       if (canUp) {
-        tw.upArrow.position.y = 2.0 + Math.sin(st.time * 4 + tw.x) * 0.09;
-        const sc = 0.5 * (1 + 0.14 * Math.sin(st.time * 6));
-        tw.upArrow.scale.set(sc, sc, 1);
+        tw.upArrow.position.y = 2.12 + Math.sin(st.time * 4 + tw.x) * 0.09;
+        const p = 1 + 0.1 * Math.sin(st.time * 6);
+        tw.upArrow.scale.set(0.92 * p, 0.69 * p, 1);
       }
       // in-range enemy that is furthest along the path (closest to the crypt)
       let best: Enemy | null = null; let bestD = -Infinity;
@@ -597,7 +601,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       const step = 18 * dt;
       if (d <= step || en.dead) {
         if (!en.dead) {
-          en.hp -= pr.dmg; en.slow = Math.max(en.slow, pr.slow); hitReact(en);
+          en.hp -= pr.dmg; en.slow = Math.max(en.slow, pr.slow); hitReact(en, pr.dmg);
           if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
           if (en.hp <= 0) killEnemy(st, en, root);
         }
@@ -932,10 +936,12 @@ function crystalSpike(head: THREE.Group, r: number, h: number, x: number, y: num
 function rebuildHead(tw: Tower) {
   const head = tw.head;
   for (const c of [...head.children]) { head.remove(c); disposeGroup(c); }
-  const shape = TOWER_TYPES[tw.type].head, lv = tw.level, col = tw.color;
+  const shape = TOWER_TYPES[tw.type].head, lv = Math.min(TOWER_VFORM_MAX, tw.level), col = tw.color;
   if (shape === 'flame') flameHead(head, lv, col);
   else if (shape === 'crystal') crystalHead(head, lv, col);
   else mortarHead(head, lv, col);
+  // past the top silhouette, keep swelling the head so deep levels still feel earned
+  head.scale.setScalar(tw.level > TOWER_VFORM_MAX ? 1 + Math.min(8, tw.level - TOWER_VFORM_MAX) * 0.05 : 1);
 }
 // a forward jet of rounded flame puffs from origin ox, fanning at angle ang
 function flameJet(head: THREE.Group, ox: number, ang: number, reach: number, puffs: number, col: number) {
@@ -992,15 +998,64 @@ function mortarHead(head: THREE.Group, lv: number, col: number) {
   if (lv >= 3) for (const sx of [-1, 1]) { const plate = box(0.06, 0.24, 0.3, 0x4a4d45, sx * 0.27, 0.08, 0); flatify(plate); head.add(plate); }
   if (lv >= 4) { const drum = cyl(0.13, 0.13, 0.2, 10, 0x2a2c29, 0, 0.06, -0.18); drum.rotation.x = Math.PI / 2; flatify(drum); head.add(drum); const ring2 = cyl(0.46, 0.46, 0.06, 12, 0x4a4d45, 0, -0.04, 0); flatify(ring2); head.add(ring2); }
 }
-// gold up-chevron sprite shown over a tower when it can be upgraded
+// gold up-chevron + the SOULS COST to upgrade, shown floating over a tower.
+// (so the player always knows how much the next upgrade costs — never a mystery)
 function makeUpArrow(): THREE.Sprite {
-  const cv = document.createElement('canvas'); cv.width = 48; cv.height = 48;
-  const ctx = cv.getContext('2d')!;
-  ctx.beginPath(); ctx.moveTo(24, 8); ctx.lineTo(42, 30); ctx.lineTo(30, 30); ctx.lineTo(30, 42); ctx.lineTo(18, 42); ctx.lineTo(18, 30); ctx.lineTo(6, 30); ctx.closePath();
-  ctx.fillStyle = '#ffd270'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(20,16,8,.7)'; ctx.stroke();
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false, transparent: true }));
-  s.scale.set(0.5, 0.5, 1);
+  const cv = document.createElement('canvas'); cv.width = 128; cv.height = 96;
+  const tex = new THREE.CanvasTexture(cv);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  s.scale.set(0.92, 0.69, 1);
+  (s as any).__cv = cv; (s as any).__tex = tex;
   return s;
+}
+function drawUpArrow(s: THREE.Sprite, cost: number, color: number) {
+  const cv = (s as any).__cv as HTMLCanvasElement | undefined; if (!cv) return;
+  const ctx = cv.getContext('2d')!;
+  ctx.clearRect(0, 0, 128, 96);
+  // chevron (top)
+  ctx.beginPath(); ctx.moveTo(64, 6); ctx.lineTo(86, 34); ctx.lineTo(74, 34); ctx.lineTo(74, 46); ctx.lineTo(54, 46); ctx.lineTo(54, 34); ctx.lineTo(42, 34); ctx.closePath();
+  ctx.fillStyle = '#ffd270'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(20,16,8,.8)'; ctx.stroke();
+  // cost chip (bottom): a dark pill with the souls number in the tower's colour
+  const hex = '#' + color.toString(16).padStart(6, '0');
+  const label = String(cost);
+  ctx.font = '800 34px Archivo, system-ui, sans-serif';
+  const tw = ctx.measureText(label).width;
+  const pillW = tw + 40, pillX = 64 - pillW / 2, pillY = 54, pillH = 38, r = 19;
+  ctx.beginPath();
+  ctx.moveTo(pillX + r, pillY); ctx.arcTo(pillX + pillW, pillY, pillX + pillW, pillY + pillH, r);
+  ctx.arcTo(pillX + pillW, pillY + pillH, pillX, pillY + pillH, r); ctx.arcTo(pillX, pillY + pillH, pillX, pillY, r);
+  ctx.arcTo(pillX, pillY, pillX + pillW, pillY, r); ctx.closePath();
+  ctx.fillStyle = 'rgba(12,16,22,.86)'; ctx.fill();
+  ctx.lineWidth = 2.5; ctx.strokeStyle = hex; ctx.stroke();
+  // tiny skull dot (souls glyph) + number
+  ctx.fillStyle = hex; ctx.beginPath(); ctx.arc(pillX + 16, pillY + pillH / 2, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, pillX + 28, pillY + pillH / 2 + 1);
+  (s as any).__tex.needsUpdate = true;
+}
+// a short-lived floating label that rises + fades (used to flash an upgrade cost
+// the player can't yet afford, so the price is never a mystery)
+function floatCost(fx: THREE.Group, x: number, z: number, text: string, color: number) {
+  const cv = document.createElement('canvas'); cv.width = 160; cv.height = 56;
+  const ctx = cv.getContext('2d')!;
+  const hex = '#' + color.toString(16).padStart(6, '0');
+  ctx.font = '800 36px Archivo, system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(0,0,0,.72)'; ctx.strokeText(text, 80, 28);
+  ctx.fillStyle = hex; ctx.fillText(text, 80, 28);
+  const tex = new THREE.CanvasTexture(cv);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  s.scale.set(1.3, 0.46, 1); s.position.set(x, 1.7, z);
+  fx.add(s);
+  const start = performance.now();
+  function step() {
+    const e = (performance.now() - start) / 850;
+    if (e >= 1) { fx.remove(s); tex.dispose(); (s.material as THREE.SpriteMaterial).dispose(); return; }
+    s.position.y = 1.7 + e * 0.95;
+    (s.material as THREE.SpriteMaterial).opacity = 1 - e * e;
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
 }
 function punch(g: THREE.Object3D) {
   const start = performance.now();
@@ -1025,25 +1080,38 @@ function drawPips(s: THREE.Sprite, level: number, color: number) {
   const cv = (s as any).__cv as HTMLCanvasElement; const ctx = cv.getContext('2d')!;
   ctx.clearRect(0, 0, 96, 24);
   const hex = '#' + color.toString(16).padStart(6, '0');
-  const max = TOWER_MAX_LVL;
-  for (let i = 0; i < max; i++) {
-    const cx = 12 + i * (72 / (max - 1 || 1));
-    ctx.beginPath(); ctx.arc(cx, 12, 7, 0, Math.PI * 2);
-    ctx.fillStyle = i < level ? hex : 'rgba(255,255,255,0.18)'; ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.stroke();
+  if (level <= TOWER_VFORM_MAX) {
+    // up to the top visual form → instant-read dots
+    const max = TOWER_VFORM_MAX;
+    for (let i = 0; i < max; i++) {
+      const cx = 12 + i * (72 / (max - 1 || 1));
+      ctx.beginPath(); ctx.arc(cx, 12, 7, 0, Math.PI * 2);
+      ctx.fillStyle = i < level ? hex : 'rgba(255,255,255,0.18)'; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.stroke();
+    }
+  } else {
+    // deep levels → a compact "LV n" badge in the tower's colour
+    ctx.font = '800 18px Archivo, system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+    ctx.strokeText('LV ' + level, 48, 13); ctx.fillStyle = hex; ctx.fillText('LV ' + level, 48, 13);
   }
   (s as any).__tex.needsUpdate = true;
 }
 function applyTowerLevel(tw: Tower) {
   const T = TOWER_TYPES[tw.type];
-  tw.range = T.range + (tw.level - 1) * 0.3;
-  tw.dmg = Math.round(T.dmg * (1 + (tw.level - 1) * 0.55));
-  tw.rate = T.rate * (1 + (tw.level - 1) * 0.18);
+  const L = tw.level - 1;
+  // damage keeps climbing forever (the reason to keep spending); range + fire-rate
+  // growth CAP so no single deep tower covers the whole map or fires absurdly fast.
+  tw.range = T.range + Math.min(5, L) * 0.26;
+  tw.dmg = Math.round(T.dmg * (1 + L * 0.5));
+  tw.rate = T.rate * (1 + Math.min(6, L) * 0.16);
   rebuildHead(tw); // shape grows/changes with level
-  if (tw.light) { tw.light.intensity = 5 + tw.level * 1.6; tw.light.distance = 3 + tw.level * 0.4; }
+  if (tw.light) { const li = Math.min(8, tw.level); tw.light.intensity = 5 + li * 1.6; tw.light.distance = 3 + li * 0.4; }
   tw.ring.geometry.dispose();
   tw.ring.geometry = new THREE.RingGeometry(tw.range - 0.06, tw.range, 40);
   drawPips(tw.pips, tw.level, tw.color);
+  drawUpArrow(tw.upArrow, UPGRADE_COST(tw.level), tw.color); // keep the shown cost in sync
 }
 function upgradeTower(tw: Tower) {
   tw.level = Math.min(TOWER_MAX_LVL, tw.level + 1);
@@ -1133,9 +1201,15 @@ function fireWater(fx: THREE.Group, st: any, tw: Tower, target: Enemy) {
 
 interface Particle { m: THREE.Mesh; vx: number; vy: number; vz: number; life: number; life0: number; grav: number; grow: number; o0: number; }
 const PARTICLES: Particle[] = [];
-// enemy flinch on hit — brief freeze + a little knockback (no colour flash)
-function hitReact(en: Enemy) {
-  en.hitStop = 0.07; en.dist = Math.max(0, en.dist - 0.16);
+// enemy flinch on hit — staggers ONLY if the hit is big relative to the enemy's
+// max HP (a poise threshold). So bosses / heavy undead shrug off chip damage and
+// keep marching (their big HP pool actually matters); only a hefty hit (e.g. an
+// upgraded mortar shell) nudges them back.
+function hitReact(en: Enemy, dmg: number) {
+  const frac = dmg / Math.max(1, en.maxHp);
+  if (frac < 0.05) return;                                 // below this enemy's threshold → no stagger
+  en.hitStop = Math.min(0.07, frac * 0.5);                 // brief stutter, scaled to the hit
+  en.dist = Math.max(0, en.dist - Math.min(0.18, frac * 0.5)); // knockback, scaled + capped
 }
 function setEmissiveAll(g: THREE.Object3D, f: number) {
   g.traverse((o) => {
@@ -1149,7 +1223,7 @@ function splashHit(st: any, root: THREE.Group, x: number, z: number, radius: num
     if (en.dead) continue;
     const dx = en.x - x, dz = en.z - z;
     if (dx * dx + dz * dz <= radius * radius) {
-      en.hp -= dmg; en.slow = Math.max(en.slow, slow); hitReact(en);
+      en.hp -= dmg; en.slow = Math.max(en.slow, slow); hitReact(en, dmg);
       if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
       if (en.hp <= 0) killEnemy(st, en, root);
     }
