@@ -1134,9 +1134,11 @@ function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
   if (def.boss) hpBar.scale.set(1.9, 0.26, 1); // bigger bar for bosses
   drawHpBar(hpBar, 1);
   st.fxLayer.add(hpBar);
-  // gentle early ramp + a steeper quadratic tail so late nights keep biting
-  const hpScaled = Math.round(def.hp * (1 + st.wave * 0.15 + st.wave * st.wave * 0.014));
-  const speedK = 1 + Math.min(0.7, st.wave * 0.035); // the dead get quicker each night
+  // gentle early ramp, then a steep quadratic + small cubic tail so the MID-LATE
+  // nights really bite (the cubic term is ~0 early, dominant by night 12+).
+  const w = st.wave;
+  const hpScaled = Math.round(def.hp * (1 + w * 0.16 + w * w * 0.024 + w * w * w * 0.0007));
+  const speedK = 1 + Math.min(0.95, st.wave * 0.042); // the dead get quicker each night
   const en: Enemy = {
     g, def, dist: 0, x, z, laneOff,
     hp: hpScaled, maxHp: hpScaled, spd: def.spd * speedK, phase: Math.random() * 6,
@@ -1325,16 +1327,19 @@ function startWave(st: any, onWave: (w: number) => void) {
   st.wave += 1;
   st.betweenWaves = false;
   const pool = poolForWave(st.wave);
-  const count = 5 + Math.round(st.wave * 2.8);              // more dead each night
-  st.spawnGap = Math.max(0.3, 1.0 - st.wave * 0.085);       // and they pour in denser
+  const count = 6 + Math.round(st.wave * 3.3);              // more dead each night
+  st.spawnGap = Math.max(0.22, 1.0 - st.wave * 0.092);      // and they pour in denser (tighter late floor)
   st.spawnQ = [];
   for (let i = 0; i < count; i++) {
     const def = pool[Math.floor(Math.random() * pool.length)];
     st.spawnQ.push(def);
   }
-  // a boss leads every 5th night
+  // a boss leads every 5th night — and the deep nights field a whole pack of them
   const isBoss = st.wave % 5 === 0;
-  if (isBoss) st.spawnQ.unshift(BOSSES[(st.wave / 5 - 1) % BOSSES.length]);
+  if (isBoss) {
+    const bossCount = 1 + Math.floor(st.wave / 15);         // 1 boss → 2 at night 15 → 3 at 30 …
+    for (let b = 0; b < bossCount; b++) st.spawnQ.unshift(BOSSES[(st.wave / 5 - 1 + b) % BOSSES.length]);
+  }
   st.spawnT = 0.3;
   sfx.wave();
   onWave(st.wave, isBoss);
