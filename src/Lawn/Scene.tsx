@@ -153,7 +153,7 @@ interface Tower {
   g: THREE.Group; head: THREE.Group; ring: THREE.Mesh; pips: THREE.Sprite; upArrow: THREE.Sprite;
   type: number; color: number; x: number; z: number; level: number;
   range: number; dmg: number; rate: number; slow: number; splash: number; chillR: number; cd: number; yaw: number;
-  light?: THREE.PointLight; flicker: number;
+  light?: THREE.PointLight; flicker: number; recoil: number; headY: number;
 }
 interface Plot { x: number; z: number; disc: THREE.Mesh; marker: THREE.Group; ring: THREE.Mesh; ghost: THREE.Group; tower: Tower | null; }
 interface Proj {
@@ -540,15 +540,19 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       }
       if (best) {
         const desired = Math.atan2(best.x - tw.x, best.z - tw.z);
-        tw.yaw += angDelta(tw.yaw, desired) * Math.min(1, dt * 12);
+        tw.yaw += angDelta(tw.yaw, desired) * Math.min(1, dt * 14);
         tw.head.rotation.y = tw.yaw;
         if (tw.cd <= 0) {
           tw.cd = 1 / tw.rate;
           fireWater(fx, st, tw, best);
+          tw.recoil = tw.splash > 0 ? 0.2 : 0.12; // a kick when it shoots
           const k = TOWER_TYPES[tw.type].head;
           if (k === 'flame') sfx.fire(); else if (k === 'crystal') sfx.frost(); else sfx.mortar();
         }
       }
+      // recoil decay — the head kicks back along its aim, then settles
+      if (tw.recoil > 0) tw.recoil = Math.max(0, tw.recoil - dt * 1.4);
+      tw.head.position.set(-Math.sin(tw.yaw) * tw.recoil, tw.headY, -Math.cos(tw.yaw) * tw.recoil);
     }
 
     // ── projectiles ──
@@ -892,6 +896,7 @@ function plantTower(root: THREE.Group, plot: Plot, typeIdx: number): Tower {
     g, head, ring, pips, upArrow, type: typeIdx, x: plot.x, z: plot.z, level: 1,
     range: T.range, dmg: T.dmg, rate: T.rate, slow: T.slow, splash: T.splash, chillR: T.chillR,
     color: T.color, cd: 0, yaw: 0, light, flicker: Math.random() * 6,
+    recoil: 0, headY: head.position.y,
   };
   applyTowerLevel(tw);
   return tw;
@@ -916,25 +921,27 @@ function rebuildHead(tw: Tower) {
   for (const c of [...head.children]) { head.remove(c); disposeGroup(c); }
   const shape = TOWER_TYPES[tw.type].head, lv = tw.level, col = tw.color;
   if (shape === 'flame') {
-    // FIRE — a cluster of rounded, billowing flame puffs (organic, NOT a cone)
+    // FIRE — round flame puffs that JET FORWARD (+z) so the head visibly aims
+    const noz = cyl(0.13, 0.17, 0.18, 8, 0x23241f, 0, 0.04, -0.04); noz.rotation.x = Math.PI / 2; flatify(noz); head.add(noz);
     const n = 3 + (lv - 1);
     for (let i = 0; i < n; i++) {
       const t = i / Math.max(1, n - 1);
-      const r = (0.21 - t * 0.1) * (1 + (lv - 1) * 0.1);
-      const fy = t * 0.5 * (1 + (lv - 1) * 0.08);
-      const fz = ((i % 3) - 1) * 0.07;
-      const fxo = (i % 2 ? 1 : -1) * 0.1 * (1 - t);
-      const warm = t > 0.55;
-      const fb = ball(r, warm ? 0xffd27a : col, fxo, fy, fz, 1); fb.castShadow = false;
+      const r = (0.2 - t * 0.1) * (1 + (lv - 1) * 0.1);
+      const fz = 0.05 + t * (0.32 + (lv - 1) * 0.07);   // billows forward = the jet
+      const fy = 0.06 + Math.sin(t * Math.PI) * 0.11;
+      const warm = t > 0.5;
+      const fb = ball(r, warm ? 0xffd27a : col, 0, fy, fz, 1); fb.castShadow = false;
       emis(fb, warm ? 0xffd27a : col, 1.7); head.add(fb);
     }
   } else if (shape === 'crystal') {
-    // FROST — a cluster of sharp faceted ice crystals (geometric, angular)
-    crystalSpike(head, 0.15 + (lv - 1) * 0.025, 0.5 + (lv - 1) * 0.12, 0, 0.3, 0, col);
+    // FROST — a forward-pointing faceted ice LANCE (aims) + angular base shards
+    const lance = cone(0.13 + (lv - 1) * 0.02, 0.5 + (lv - 1) * 0.13, 4, col, 0, 0.12, 0);
+    lance.rotation.x = Math.PI / 2; lance.rotation.z = 0.4; lance.position.z = 0.3 + (lv - 1) * 0.06;
+    emis(lance, col, 1.5); head.add(lance);
     const shards = 2 + (lv - 1);
     for (let i = 0; i < shards; i++) {
       const a = (i / shards) * Math.PI * 2;
-      crystalSpike(head, 0.08, 0.26 + (lv - 1) * 0.04, Math.cos(a) * 0.17, 0.12, Math.sin(a) * 0.17, col, a);
+      crystalSpike(head, 0.08, 0.24 + (lv - 1) * 0.04, Math.cos(a) * 0.16, 0.1, Math.sin(a) * 0.16 - 0.02, col, a);
     }
   } else {
     // MORTAR — forward+up cannon barrel(s)
@@ -1046,11 +1053,26 @@ function killEnemy(st: any, en: Enemy, _root: THREE.Group) {
 }
 
 // ─── projectiles + fx ───────────────────────────────────────────────────────
+// a quick bright muzzle flash that pops + fades at (x,y,z)
+function muzzleFlash(fx: THREE.Group, x: number, y: number, z: number, color: number) {
+  const m = ball(0.2, color, x, y, z, 1); const mm = m.material as THREE.MeshStandardMaterial;
+  mm.emissive = new THREE.Color(color); mm.emissiveIntensity = 2.4; mm.transparent = true; m.castShadow = false;
+  fx.add(m);
+  const start = performance.now();
+  function step() {
+    const e = (performance.now() - start) / 130;
+    if (e >= 1) { fx.remove(m); m.geometry.dispose(); mm.dispose(); return; }
+    m.scale.setScalar(0.5 + e * 1.4); mm.opacity = 1 - e;
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
 function fireWater(fx: THREE.Group, st: any, tw: Tower, target: Enemy) {
   const col = tw.color;
   // spawn from the barrel muzzle (forward of the swivelled head)
   const fxd = Math.sin(tw.yaw), fzd = Math.cos(tw.yaw);
   const mx = tw.x + fxd * 0.5, mz = tw.z + fzd * 0.5, my = 1.05;
+  muzzleFlash(fx, mx, my, mz, col);
   const base = { target, dmg: tw.dmg, slow: tw.slow, splash: tw.splash, chill: tw.chillR, color: col,
     tx: target.x, ty: 0.5, tz: target.z, x: mx, y: my, z: mz };
   if (tw.splash > 0) {
