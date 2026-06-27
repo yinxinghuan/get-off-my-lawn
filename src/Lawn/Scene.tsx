@@ -1067,8 +1067,8 @@ function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
   drawHpBar(hpBar, 1);
   st.fxLayer.add(hpBar);
   // gentle early ramp + a steeper quadratic tail so late nights keep biting
-  const hpScaled = Math.round(def.hp * (1 + st.wave * 0.13 + st.wave * st.wave * 0.009));
-  const speedK = 1 + Math.min(0.55, st.wave * 0.028); // the dead get quicker each night
+  const hpScaled = Math.round(def.hp * (1 + st.wave * 0.15 + st.wave * st.wave * 0.014));
+  const speedK = 1 + Math.min(0.7, st.wave * 0.035); // the dead get quicker each night
   const en: Enemy = {
     g, def, dist: 0, x, z, laneOff,
     hp: hpScaled, maxHp: hpScaled, spd: def.spd * speedK, phase: Math.random() * 6,
@@ -1251,8 +1251,8 @@ function startWave(st: any, onWave: (w: number) => void) {
   st.wave += 1;
   st.betweenWaves = false;
   const pool = poolForWave(st.wave);
-  const count = 4 + Math.round(st.wave * 2.5);              // more dead each night
-  st.spawnGap = Math.max(0.32, 1.05 - st.wave * 0.08);      // and they pour in denser
+  const count = 5 + Math.round(st.wave * 2.8);              // more dead each night
+  st.spawnGap = Math.max(0.3, 1.0 - st.wave * 0.085);       // and they pour in denser
   st.spawnQ = [];
   for (let i = 0; i < count; i++) {
     const def = pool[Math.floor(Math.random() * pool.length)];
