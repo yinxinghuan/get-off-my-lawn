@@ -85,6 +85,15 @@ export function Finger({ size = 46 }: { size?: number }) {
   );
 }
 
+export function Crown({ size = 16 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>
+      <path d="M3 7.5l4 3.2L12 4l5 6.7 4-3.2-1.6 11H4.6z" fill="#ffd270" stroke="rgba(120,80,10,.5)" strokeWidth="1.1" strokeLinejoin="round" />
+      <rect x="4.4" y="18.6" width="15.2" height="2.4" rx="1" fill="#ffd270" />
+    </svg>
+  );
+}
+
 export function Tomb({ size = 18 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>

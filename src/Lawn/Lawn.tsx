@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Scene, { type HudState } from './Scene';
 import { TOWER_TYPES } from './Scene';
 import { Leaderboard, useGameScore } from '@shared/leaderboard';
-import { useGameEvent, telegramId } from '@shared/runtime';
+import type { LeaderboardEntry } from '@shared/leaderboard';
+import { useGameEvent, telegramId, openAigramProfile } from '@shared/runtime';
 import { unlockAudio, setMuted, isMuted } from './audio';
-import { Candle, Skull, Sound, Tomb, Finger, Flame, Frost, Burst } from './icons';
+import { Candle, Skull, Sound, Tomb, Finger, Flame, Frost, Burst, Crown } from './icons';
 import { t } from './i18n';
 import './Lawn.less';
 
@@ -25,6 +26,7 @@ export function Lawn() {
   const [muted, setMutedState] = useState(isMuted());
   const [upgradeHint, setUpgradeHint] = useState(false);
   const [selectedType, setSelectedType] = useState(0);
+  const [champ, setChamp] = useState<LeaderboardEntry | null>(null);
   const prevTowers = useRef(0);
 
   const restartRef = useRef<() => void>(() => {});
@@ -35,6 +37,12 @@ export function Lawn() {
   const { isInAigram, submitScore, fetchLeaderboard } = useGameScore();
   const events = useGameEvent();
   const preRunBest = useRef(0);
+
+  // champion pill — refresh the current #1 on the start + game-over screens
+  useEffect(() => {
+    if (!isInAigram || phase === 'playing') return;
+    fetchLeaderboard().then((rows) => setChamp(rows[0] || null)).catch(() => {});
+  }, [phase, isInAigram, fetchLeaderboard]);
 
   // snapshot my standing on the board when a run starts
   useEffect(() => {
@@ -109,6 +117,22 @@ export function Lawn() {
 
   const sel = TOWER_TYPES[selectedType];
 
+  // champion pill — the standard always-visible leaderboard entry (#1 player)
+  const champPill = (cls: string) => (!isInAigram ? null : (
+    <button className={`gol-champ ${cls}`} onPointerDown={(e) => { e.stopPropagation(); setShowBoard(true); }}>
+      <span className="gol-champ-crown"><Crown /></span>
+      {champ ? (
+        <>
+          {champ.avatar_url
+            ? <img className="gol-champ-av" src={champ.avatar_url} alt="" />
+            : <span className="gol-champ-avf">{(champ.name || '?').slice(0, 1)}</span>}
+          <span className="gol-champ-nm">{champ.name}</span>
+          <span className="gol-champ-sc">{champ.score}</span>
+        </>
+      ) : <span className="gol-champ-nm">{t('leaderboard')}</span>}
+    </button>
+  ));
+
   return (
     <div className="gol">
       <Scene
@@ -129,6 +153,7 @@ export function Lawn() {
           <div className={`gol-hud gol-souls${hud.cash >= sel.cost ? ' gol-souls--ready' : ''}`}>
             <Skull /> {hud.cash}
           </div>
+          {champPill('gol-champ--play')}
           <div className="gol-hud gol-meta">
             <span className="gol-chip"><b>{t('wave')}</b> {hud.wave || 1}</span>
             <span className="gol-chip gol-chip--score">{hud.score} <b>{t('score')}</b></span>
@@ -170,19 +195,18 @@ export function Lawn() {
         <div className="gol-wavebanner" key={waveBanner}>{t('wave')} {waveBanner}</div>
       )}
 
-      {/* ── attract — teaches the loop, then tap to play ── */}
+      {/* ── start = the live scene itself (instant-play): logo on top, a simple
+            gesture hint, tap anywhere to defend. Rest is learned by playing. ── */}
       {phase === 'attract' && (
-        <div className="gol-overlay" onPointerDown={startGame}>
-          <div className="gol-wordmark">
-            <span className="wm">Get Off<br />My Grave</span>
+        <>
+          <div className="gol-tapcatch" onPointerDown={startGame} />
+          <div className="gol-logo"><span className="wm">Get Off<br />My Grave</span></div>
+          {champPill('gol-champ--attract')}
+          <div className="gol-startguide">
+            <div className="gol-finger"><Finger /></div>
+            <div className="gol-start-cta">{t('tapToStart')}</div>
           </div>
-          <div className="gol-how">
-            <div className="gol-how-step"><span className="gol-how-ico"><Skull size={20} /></span>{t('howDead')}</div>
-            <div className="gol-how-step"><span className="gol-how-ico"><Flame size={20} /></span>{t('howBuild')}</div>
-            <div className="gol-how-step"><span className="gol-how-ico"><Tomb size={18} /></span>{t('howGuard')}</div>
-          </div>
-          <div className="gol-cta">{t('tapToStart')}</div>
-        </div>
+        </>
       )}
 
       {/* ── game over ── */}

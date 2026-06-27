@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import {
   P, box, cyl, cone, ball,
   fence, lamp, PLANTS,
-  CHARACTERS, MONSTERS, rigOf,
+  CHARACTERS, ARCHETYPES, MONSTERS, rigOf,
 } from './lab';
 import { sfx } from './audio';
 
@@ -83,31 +83,56 @@ interface IntruderDef {
   scale: number;
   legs: boolean;     // biped (swing legs) vs critter (bob)
 }
-function deadDef(id: string, key: string, hp: number, spd: number, bounty: number, scale = 1): IntruderDef {
-  // the freshly-dead — ordinary people who just died, come to squat your plot
-  return { id, make: () => paleDead(CHARACTERS[key]()), hp, spd, bounty, scale, legs: true };
+// the freshly-dead — ordinary people who just died (paled), come to squat your plot
+function deadDef(key: string, hp: number, spd: number, bounty: number, scale = 1): IntruderDef {
+  return { id: 'dead_' + key, make: () => paleDead(CHARACTERS[key]()), hp, spd, bounty, scale, legs: true };
+}
+// recently-dead in their work/street outfits (the archetype pack, paled)
+function deadArch(key: string, hp: number, spd: number, bounty: number, scale = 1): IntruderDef {
+  return { id: 'darch_' + key, make: () => paleDead(ARCHETYPES[key]()), hp, spd, bounty, scale, legs: true };
 }
 function monDef(id: string, key: string, hp: number, spd: number, bounty: number, scale = 1, legs = true): IntruderDef {
   return { id, make: () => MONSTERS[key](), hp, spd, bounty, scale, legs };
 }
 
-// pool grows with waves — early = wisps & the freshly dead, later = heavy undead + werewolf boss
+// Large, varied cast pulled from the whole asset library: 6 undead monsters +
+// the full CHARACTERS roster + the ARCHETYPES pack, all as "the freshly dead".
+// Ordered roughly by difficulty so the wave pool grows through a diverse crowd.
 const ROSTER: IntruderDef[] = [
-  monDef('ghost', 'ghost', 16, 2.0, 7, 0.95, false),   // fast floating wisp
-  deadDef('kid', 'kid', 24, 1.3, 8),
+  monDef('ghost', 'ghost', 16, 2.0, 7, 0.95, false),
+  deadDef('kid', 24, 1.32, 8, 0.92),
   monDef('skeleton', 'skeleton', 26, 1.55, 9, 0.95),
-  deadDef('student', 'student', 34, 1.18, 10),
-  deadDef('officeWoman', 'officeWoman', 36, 1.15, 11),
-  monDef('zombie', 'zombie', 58, 0.92, 14, 1.0),       // slow tank
-  deadDef('businessman', 'businessman', 44, 1.1, 13),
-  monDef('mummy', 'mummy', 72, 0.82, 16, 1.0),
-  monDef('vampire', 'vampire', 64, 1.32, 18, 1.0),     // fast + tanky
-  deadDef('teen', 'teen', 40, 1.22, 12),
-  monDef('werewolf', 'werewolf', 190, 0.98, 48, 1.22),  // heavy boss
+  deadDef('student', 32, 1.2, 10),
+  deadDef('granny', 28, 1.05, 10, 0.95),
+  deadArch('delivery', 38, 1.18, 12),
+  deadDef('officeWoman', 34, 1.18, 11),
+  monDef('zombie', 'zombie', 58, 0.92, 14),
+  deadDef('businessman', 42, 1.1, 13),
+  deadArch('nurse', 36, 1.2, 12),
+  deadDef('chef', 40, 1.12, 12),
+  deadArch('punk', 46, 1.22, 14),
+  deadDef('teen', 38, 1.24, 12),
+  monDef('mummy', 'mummy', 74, 0.82, 16),
+  deadArch('cop', 50, 1.12, 15),
+  deadDef('worker', 44, 1.1, 13),
+  deadArch('cowboy', 46, 1.14, 14),
+  deadDef('darkWoman', 40, 1.18, 13),
+  deadArch('rapper', 44, 1.16, 14),
+  monDef('vampire', 'vampire', 66, 1.32, 18),
+  deadArch('biker', 58, 1.06, 17, 1.05),
+  deadDef('bigGuy', 64, 0.98, 18, 1.08),
+  deadArch('firefighter', 52, 1.1, 16),
+  deadArch('goth', 44, 1.2, 14),
+  deadDef('blonde', 38, 1.2, 12),
+  deadArch('construction', 60, 1.0, 17, 1.05),
+  deadDef('fitWoman', 42, 1.28, 13),
+  deadDef('oldman', 30, 1.0, 11, 0.96),
+  deadDef('shopkeeper', 40, 1.14, 13),
+  monDef('werewolf', 'werewolf', 200, 0.98, 50, 1.22),
 ];
 function poolForWave(w: number): IntruderDef[] {
-  // unlock ~2 new roster entries per wave
-  const n = Math.min(ROSTER.length, 3 + w * 2);
+  // unlock a generous, growing slice so each wave fields a varied crowd
+  const n = Math.min(ROSTER.length, 6 + w * 4);
   return ROSTER.slice(0, n);
 }
 
@@ -121,9 +146,11 @@ interface Enemy {
   phase: number; dead: boolean; reached: boolean;
   slow: number; // remaining slow timer (sec)
   hpBar: THREE.Sprite | null;
+  dying: number; vy: number; spin: number; dustT: number; // death-launch anim + foot dust
+  hitFlash: number; hitStop: number; flashOn: boolean;     // damage flinch (flash + brief freeze)
 }
 interface Tower {
-  g: THREE.Group; head: THREE.Object3D; ring: THREE.Mesh; pips: THREE.Sprite;
+  g: THREE.Group; head: THREE.Group; ring: THREE.Mesh; pips: THREE.Sprite; upArrow: THREE.Sprite;
   type: number; color: number; x: number; z: number; level: number;
   range: number; dmg: number; rate: number; slow: number; splash: number; cd: number; yaw: number;
   light?: THREE.PointLight; flicker: number;
@@ -282,17 +309,23 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
           plot.tower = plantTower(root, plot, ti);
           st.towers.push(plot.tower);
           plot.marker.visible = false;
+          popIn(plot.tower.g);                                   // slam-in pop
+          ringPulse(fx, plot.x, plot.z, TOWER_TYPES[ti].color);  // shockwave
+          footDust(fx, plot.x, plot.z); footDust(fx, plot.x, plot.z);
           sfx.plant();
           pushHud(st);
-        } else { bounce(plot.marker); }
+        } else { bounce(plot.marker); sfx.splat(); }
       } else {
         const tw = plot.tower;
         if (tw.level >= TOWER_MAX_LVL) { return; }
         const cost = UPGRADE_COST(tw.level);
         if (st.cash >= cost) {
-          st.cash -= cost; upgradeTower(tw); sfx.upgrade(); pushHud(st);
-          ringPulse(fx, tw.x, tw.z);
-        } else { bounce(tw.g); }
+          st.cash -= cost; upgradeTower(tw); sfx.upgrade();
+          punch(tw.head);                                  // tower jolts
+          deathBurst(fx, tw.x, tw.z, tw.color);            // upward spark burst
+          ringPulse(fx, tw.x, tw.z, tw.color);
+          pushHud(st);
+        } else { bounce(tw.g); sfx.splat(); }
       }
     }
     function onDown(e: PointerEvent) { pd = { x: e.clientX, y: e.clientY, moved: false }; }
@@ -394,14 +427,14 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
     if (isAttract) {
       // live attract demo: pre-place a couple of sprinklers, trickle intruders
       if (!st.demoReady) {
-        for (const idx of [2, 3]) {
+        [[2, 0], [3, 2], [6, 1]].forEach(([idx, ty]) => {
           const plot = st.plots[idx];
           if (plot && !plot.tower) {
-            plot.tower = plantTower(root, plot);
+            plot.tower = plantTower(root, plot, ty);
             if (idx === 3) upgradeTower(plot.tower);
             st.towers.push(plot.tower); plot.marker.visible = false;
           }
-        }
+        });
         st.demoReady = true;
       }
       st.attractT -= dt;
@@ -431,9 +464,24 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
 
     // ── enemies march along the winding path ──
     for (const en of st.enemies) {
+      if (en.dying > 0) { // death-launch animation (corpse flies + shrinks)
+        en.dying -= dt;
+        en.vy -= 16 * dt;
+        en.g.position.y = Math.max(0, en.g.position.y + en.vy * dt);
+        en.g.rotation.z += en.spin * dt;
+        en.g.scale.multiplyScalar(Math.max(0, 1 - dt * 2.4));
+        continue;
+      }
       if (en.dead) continue;
+      // damage flinch — white flash + brief freeze (hit-stop)
+      if (en.hitFlash > 0) {
+        en.hitFlash -= dt;
+        setEmissiveAll(en.g, Math.max(0, en.hitFlash / 0.15) * 0.9);
+        en.flashOn = true;
+      } else if (en.flashOn) { setEmissiveAll(en.g, 0); en.flashOn = false; }
       let spd = en.spd;
       if (en.slow > 0) { en.slow -= dt; spd *= 0.5; }
+      if (en.hitStop > 0) { en.hitStop -= dt; spd = 0; }  // momentary stagger
       en.dist += spd * dt;
       en.phase += dt * spd * 3.2;
       const p = posAlong(en.dist);
@@ -452,6 +500,8 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
         if (rig?.armR) rig.armR.rotation.x = sw * 0.7;
       }
       if (en.hpBar) en.hpBar.position.set(en.x, 1.5 * en.def.scale * ENEMY_SCALE + 0.9, en.z);
+      // foot dust kicked up as they shamble (bipeds only; ghosts float)
+      if (en.def.legs) { en.dustT -= dt; if (en.dustT <= 0) { footDust(fx, en.x, en.z); en.dustT = 0.3; } }
       // reached the crypt
       if (en.dist >= PATH_TOTAL) {
         en.reached = true; en.dead = true;
@@ -468,6 +518,14 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       // brazier flame flicker → restless pool of light
       tw.flicker += dt * 11;
       if (tw.light) tw.light.intensity = (5 + tw.level * 1.6) * (0.78 + 0.22 * Math.sin(tw.flicker) + 0.08 * Math.sin(tw.flicker * 2.7));
+      // "can upgrade now" cue — a bobbing gold up-arrow when you can afford it
+      const canUp = !isAttract && tw.level < TOWER_MAX_LVL && st.cash >= UPGRADE_COST(tw.level);
+      tw.upArrow.visible = canUp;
+      if (canUp) {
+        tw.upArrow.position.y = 2.0 + Math.sin(st.time * 4 + tw.x) * 0.09;
+        const sc = 0.5 * (1 + 0.14 * Math.sin(st.time * 6));
+        tw.upArrow.scale.set(sc, sc, 1);
+      }
       // in-range enemy that is furthest along the path (closest to the crypt)
       let best: Enemy | null = null; let bestD = -Infinity;
       for (const en of st.enemies) {
@@ -501,7 +559,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
           splashHit(st, root, pr.x, pr.z, pr.splash, pr.dmg, pr.slow);
           ringPulse(fx, pr.x, pr.z, pr.color);
         } else if (!en.dead) {
-          en.hp -= pr.dmg; en.slow = Math.max(en.slow, pr.slow);
+          en.hp -= pr.dmg; en.slow = Math.max(en.slow, pr.slow); hitReact(en);
           if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
           if (en.hp <= 0) killEnemy(st, en, root);
         }
@@ -518,7 +576,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       return true;
     });
     st.enemies = st.enemies.filter((en) => {
-      if (en.dead) {
+      if (en.dead && en.dying <= 0) {
         if (en.hpBar) { fx.remove(en.hpBar); }
         root.remove(en.g); disposeGroup(en.g);
         return false;
@@ -772,24 +830,10 @@ function plantTower(root: THREE.Group, plot: Plot, typeIdx: number): Tower {
   const T = TOWER_TYPES[typeIdx];
   const g = new THREE.Group();
   g.position.set(plot.x, 0, plot.z);
-  const base = cyl(0.44, 0.52, 0.22, 8, 0x474b46, 0, 0.11, 0); flatify(base); g.add(base);
-  const post = cyl(0.11, 0.13, 0.58, 8, 0x2a2c29, 0, 0.5, 0); flatify(post); g.add(post);
-  const bowl = cyl(0.3, 0.18, 0.22, 10, 0x33352f, 0, 0.84, 0); flatify(bowl); g.add(bowl);
-  // head varies by type so each weapon reads distinctly
-  const head = new THREE.Group(); head.position.y = 0.98;
-  let emitter: THREE.Mesh;
-  if (T.head === 'crystal') {
-    emitter = ball(0.22, T.color, 0, 0.02, 0, 0);          // angular crystal
-  } else if (T.head === 'mortar') {
-    const tube = cyl(0.2, 0.26, 0.34, 10, 0x2a2c29, 0, 0.04, 0); tube.rotation.x = -0.35; flatify(tube); head.add(tube);
-    emitter = ball(0.15, T.color, 0, 0.12, 0.05, 1);        // glowing ember in the muzzle
-  } else {
-    emitter = ball(0.24, T.color, 0, 0, 0, 1);              // smooth flame
-  }
-  const em = emitter.material as THREE.MeshStandardMaterial;
-  em.emissive = new THREE.Color(T.color); em.emissiveIntensity = 1.4; emitter.castShadow = false;
-  head.add(emitter);
-  g.add(head);
+  const base = cyl(0.46, 0.54, 0.22, 8, 0x474b46, 0, 0.11, 0); flatify(base); g.add(base);
+  const post = cyl(0.12, 0.14, 0.5, 8, 0x2a2c29, 0, 0.46, 0); flatify(post); g.add(post);
+  const bowl = cyl(0.3, 0.2, 0.2, 10, 0x33352f, 0, 0.78, 0); flatify(bowl); g.add(bowl);
+  const head = new THREE.Group(); head.position.y = 0.9; g.add(head); // shape rebuilt per type+level
   const light = new THREE.PointLight(T.color, 6, 3.4, 2);
   light.position.set(0, 1.0, 0); light.castShadow = false; g.add(light);
   const ring = new THREE.Mesh(
@@ -797,17 +841,81 @@ function plantTower(root: THREE.Group, plot: Plot, typeIdx: number): Tower {
     new THREE.MeshBasicMaterial({ color: T.color, transparent: true, opacity: 0.14, side: THREE.DoubleSide }),
   );
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; g.add(ring);
-  // level pips above the tower so "level" is always visible
-  const pips = makePips();
-  pips.position.set(0, 1.45, 0); g.add(pips);
+  const pips = makePips(); pips.position.set(0, 1.62, 0); g.add(pips);
+  const upArrow = makeUpArrow(); upArrow.position.set(0, 2.02, 0); upArrow.visible = false; g.add(upArrow);
   root.add(g);
   const tw: Tower = {
-    g, head, ring, pips, type: typeIdx, x: plot.x, z: plot.z, level: 1,
+    g, head, ring, pips, upArrow, type: typeIdx, x: plot.x, z: plot.z, level: 1,
     range: T.range, dmg: T.dmg, rate: T.rate, slow: T.slow, splash: T.splash,
     color: T.color, cd: 0, yaw: 0, light, flicker: Math.random() * 6,
   };
   applyTowerLevel(tw);
   return tw;
+}
+
+function emis(m: THREE.Mesh, color: number, ei: number) {
+  const mm = m.material as THREE.MeshStandardMaterial;
+  mm.emissive = new THREE.Color(color); mm.emissiveIntensity = ei; m.castShadow = false;
+}
+// rebuild the head shape for the tower's type + level (so upgrades change the form)
+function rebuildHead(tw: Tower) {
+  const head = tw.head;
+  for (const c of [...head.children]) { head.remove(c); disposeGroup(c); }
+  const shape = TOWER_TYPES[tw.type].head, lv = tw.level, col = tw.color;
+  if (shape === 'flame') {
+    const tall = 0.4 + lv * 0.14;
+    const main = cone(0.16 + lv * 0.02, tall, 8, col, 0, tall / 2, 0); head.add(main); emis(main, col, 1.6);
+    for (let i = 0; i < lv - 1; i++) {
+      const a = (i / Math.max(1, lv - 1)) * Math.PI * 2;
+      const tc = cone(0.08, tall * 0.55, 6, col, Math.cos(a) * 0.17, tall * 0.32, Math.sin(a) * 0.17);
+      head.add(tc); emis(tc, col, 1.4);
+    }
+    if (lv >= 4) { const crown = ball(0.1, 0xfff3d6, 0, tall + 0.04, 0, 1); head.add(crown); emis(crown, col, 1.9); }
+  } else if (shape === 'crystal') {
+    const s = 0.3 + lv * 0.07;
+    diamond(head, s, 0, 0.32, 0, col);
+    const shards = Math.min(lv - 1, 4);
+    for (let i = 0; i < shards; i++) {
+      const a = (i / shards) * Math.PI * 2;
+      diamond(head, s * 0.5, Math.cos(a) * 0.2, 0.18, Math.sin(a) * 0.2, col);
+    }
+  } else { // mortar — chunky cannon barrels
+    const block = box(0.36, 0.18, 0.36, 0x3a3d36, 0, 0.05, 0); flatify(block); head.add(block);
+    const barrels = Math.min(lv, 3);
+    const len = 0.34 + lv * 0.07;
+    for (let i = 0; i < barrels; i++) {
+      const bx = (i - (barrels - 1) / 2) * 0.14;
+      const bar = cyl(0.1, 0.13, len, 10, 0x23241f, bx, 0.12 + len * 0.28, 0.05); bar.rotation.x = -0.55; flatify(bar); head.add(bar);
+      const ember = ball(0.07, col, bx, 0.12 + len * 0.5, 0.05 + len * 0.32, 1); head.add(ember); emis(ember, col, 1.7);
+    }
+    if (lv >= 4) { const ring2 = cyl(0.42, 0.42, 0.06, 12, 0x4a4d45, 0, 0.02, 0); flatify(ring2); head.add(ring2); }
+  }
+}
+// a faceted diamond crystal (up cone + down cone) at (x,y,z)
+function diamond(head: THREE.Group, size: number, x: number, y: number, z: number, color: number) {
+  const up = cone(size * 0.5, size * 0.7, 6, color, x, y + size * 0.32, z);
+  const dn = cone(size * 0.5, size * 0.5, 6, color, x, y - size * 0.22, z); dn.rotation.x = Math.PI;
+  head.add(up); head.add(dn); emis(up, color, 1.2); emis(dn, color, 1.2);
+}
+// gold up-chevron sprite shown over a tower when it can be upgraded
+function makeUpArrow(): THREE.Sprite {
+  const cv = document.createElement('canvas'); cv.width = 48; cv.height = 48;
+  const ctx = cv.getContext('2d')!;
+  ctx.beginPath(); ctx.moveTo(24, 8); ctx.lineTo(42, 30); ctx.lineTo(30, 30); ctx.lineTo(30, 42); ctx.lineTo(18, 42); ctx.lineTo(18, 30); ctx.lineTo(6, 30); ctx.closePath();
+  ctx.fillStyle = '#ffd270'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(20,16,8,.7)'; ctx.stroke();
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false, transparent: true }));
+  s.scale.set(0.5, 0.5, 1);
+  return s;
+}
+function punch(g: THREE.Object3D) {
+  const start = performance.now();
+  function step() {
+    const e = (performance.now() - start) / 240;
+    if (e >= 1) { g.scale.setScalar(1); return; }
+    g.scale.setScalar(1 + Math.sin(e * Math.PI) * 0.38);
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
 }
 // three little pips that fill in as the tower levels up
 function makePips(): THREE.Sprite {
@@ -836,8 +944,7 @@ function applyTowerLevel(tw: Tower) {
   tw.range = T.range + (tw.level - 1) * 0.3;
   tw.dmg = Math.round(T.dmg * (1 + (tw.level - 1) * 0.55));
   tw.rate = T.rate * (1 + (tw.level - 1) * 0.18);
-  const emitter = tw.head.children[tw.head.children.length - 1] as THREE.Mesh;
-  emitter.scale.setScalar(1 + (tw.level - 1) * 0.18);
+  rebuildHead(tw); // shape grows/changes with level
   if (tw.light) { tw.light.intensity = 5 + tw.level * 1.6; tw.light.distance = 3 + tw.level * 0.4; }
   tw.ring.geometry.dispose();
   tw.ring.geometry = new THREE.RingGeometry(tw.range - 0.06, tw.range, 40);
@@ -868,11 +975,18 @@ function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
     g, def, dist: 0, x, z, laneOff,
     hp: hpScaled, maxHp: hpScaled, spd: def.spd, phase: Math.random() * 6,
     dead: false, reached: false, slow: 0, hpBar,
+    dying: 0, vy: 0, spin: 0, dustT: Math.random() * 0.3,
+    hitFlash: 0, hitStop: 0, flashOn: false,
   };
   st.enemies.push(en);
 }
 function killEnemy(st: any, en: Enemy, _root: THREE.Group) {
   en.dead = true;
+  // launch + burst (Block Party feel): corpse flies, bone + ectoplasm bits spray
+  en.dying = 0.5; en.vy = 4.5 + Math.random() * 3; en.spin = (Math.random() - 0.5) * 18;
+  if (en.hpBar) { st.fxLayer.remove(en.hpBar); en.hpBar = null; }
+  deathBurst(st.fxLayer, en.x, en.z, 0x8ff0c4);
+  ringPulse(st.fxLayer, en.x, en.z, 0x8ff0c4);
   st.cash += en.def.bounty;
   st.score += 1;
   sfx.splat();
@@ -894,17 +1008,63 @@ function fireWater(fx: THREE.Group, st: any, tw: Tower, target: Enemy) {
 
 interface Particle { m: THREE.Mesh; vx: number; vy: number; vz: number; life: number; }
 const PARTICLES: Particle[] = [];
+// enemy flinch on hit — brief white flash + freeze + a little knockback
+function hitReact(en: Enemy) {
+  en.hitFlash = 0.15; en.hitStop = 0.07; en.dist = Math.max(0, en.dist - 0.16);
+}
+function setEmissiveAll(g: THREE.Object3D, f: number) {
+  g.traverse((o) => {
+    const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+    if (m && m.emissive) m.emissive.setScalar(f);
+  });
+}
 // area blast — damage + slow every live enemy within radius of the impact
 function splashHit(st: any, root: THREE.Group, x: number, z: number, radius: number, dmg: number, slow: number) {
   for (const en of st.enemies) {
     if (en.dead) continue;
     const dx = en.x - x, dz = en.z - z;
     if (dx * dx + dz * dz <= radius * radius) {
-      en.hp -= dmg; en.slow = Math.max(en.slow, slow);
+      en.hp -= dmg; en.slow = Math.max(en.slow, slow); hitReact(en);
       if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
       if (en.hp <= 0) killEnemy(st, en, root);
     }
   }
+}
+// Block-Party-style death burst — bone shards + ectoplasm bits flung out + up
+function deathBurst(fx: THREE.Group, x: number, z: number, color: number) {
+  for (let i = 0; i < 16; i++) {
+    const bone = Math.random() < 0.45;
+    const col = bone ? 0xe8e4d2 : color;
+    const m = ball(bone ? 0.07 : 0.09, col, x, 0.8 + Math.random() * 0.5, z);
+    const mm = m.material as THREE.MeshStandardMaterial;
+    if (!bone) { mm.emissive = new THREE.Color(color); mm.emissiveIntensity = 1.4; }
+    m.castShadow = false; fx.add(m);
+    const ang = Math.random() * Math.PI * 2, sp = 2.5 + Math.random() * 4.5;
+    PARTICLES.push({ m, vx: Math.sin(ang) * sp, vy: 3.5 + Math.random() * 4, vz: Math.cos(ang) * sp, life: 0.5 + Math.random() * 0.5 });
+  }
+}
+// small grey foot-dust puffs (kicked up as characters walk) — like the store
+function footDust(fx: THREE.Group, x: number, z: number) {
+  for (let i = 0; i < 2; i++) {
+    const m = ball(0.05 + Math.random() * 0.03, 0x8c8f86, x + (Math.random() - 0.5) * 0.2, 0.06, z + (Math.random() - 0.5) * 0.2);
+    (m.material as THREE.MeshStandardMaterial).transparent = true;
+    (m.material as THREE.MeshStandardMaterial).opacity = 0.55;
+    m.castShadow = false; m.receiveShadow = false; fx.add(m);
+    PARTICLES.push({ m, vx: (Math.random() - 0.5) * 0.5, vy: 0.5 + Math.random() * 0.4, vz: (Math.random() - 0.5) * 0.5, life: 0.35 + Math.random() * 0.2 });
+  }
+}
+// pop a freshly-placed tower in from nothing (tactile "slam")
+function popIn(g: THREE.Object3D) {
+  const start = performance.now();
+  function step() {
+    const e = (performance.now() - start) / 260;
+    if (e >= 1) { g.scale.setScalar(1); return; }
+    const s = e < 0.7 ? (0.2 + (e / 0.7) * 0.95) : (1.15 - ((e - 0.7) / 0.3) * 0.15); // overshoot then settle
+    g.scale.setScalar(s);
+    requestAnimationFrame(step);
+  }
+  g.scale.setScalar(0.2);
+  requestAnimationFrame(step);
 }
 function splash(fx: THREE.Group, x: number, y: number, z: number, color = 0x8fe6b8) {
   for (let i = 0; i < 6; i++) {
