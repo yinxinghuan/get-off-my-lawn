@@ -5,12 +5,12 @@ import { Leaderboard, useGameScore } from '@shared/leaderboard';
 import type { LeaderboardEntry } from '@shared/leaderboard';
 import { useGameEvent, telegramId, openAigramProfile } from '@shared/runtime';
 import { unlockAudio, setMuted, isMuted } from './audio';
-import { Candle, Skull, Sound, Tomb, Finger, Flame, Frost, Burst, Crown } from './icons';
+import { Candle, Skull, Sound, Tomb, Finger, Flame, Frost, Burst, Crown, Bolt, Venom, Lock } from './icons';
 import { t } from './i18n';
 import './Lawn.less';
 
 const POSTER_URL = 'https://yinxinghuan.github.io/games/posters/get-off-my-lawn.png';
-const TYPE_ICON = [Flame, Frost, Burst]; // by TOWER_TYPES order
+const TYPE_ICON = [Flame, Frost, Burst, Bolt, Venom]; // by TOWER_TYPES order
 
 type Phase = 'attract' | 'playing' | 'over';
 const BEST_KEY = 'gol_best';
@@ -30,6 +30,8 @@ export function Lawn() {
   const [upgradeHint, setUpgradeHint] = useState(false);
   const [selectedType, setSelectedType] = useState(0);
   const [champ, setChamp] = useState<LeaderboardEntry | null>(null);
+  const [unlockToast, setUnlockToast] = useState<string | null>(null);
+  const lastWave = useRef(0);
   const prevTowers = useRef(0);
 
   const restartRef = useRef<() => void>(() => {});
@@ -117,11 +119,23 @@ export function Lawn() {
   }, [submitScore, sendBeatNotify]);
   const registerRestart = useCallback((fn: () => void) => { restartRef.current = fn; }, []);
 
-  const startGame = () => { unlockAudio(); prevTowers.current = 0; submittedBest.current = 0; lastSubmitT.current = 0; setSelectedType(0); setPhase('playing'); };
-  const again = () => { prevTowers.current = 0; submittedBest.current = 0; lastSubmitT.current = 0; setSelectedType(0); setPhase('playing'); };
+  const startGame = () => { unlockAudio(); prevTowers.current = 0; submittedBest.current = 0; lastSubmitT.current = 0; lastWave.current = 0; setUnlockToast(null); setSelectedType(0); setPhase('playing'); };
+  const again = () => { prevTowers.current = 0; submittedBest.current = 0; lastSubmitT.current = 0; lastWave.current = 0; setUnlockToast(null); setSelectedType(0); setPhase('playing'); };
   const toggleMute = () => { const m = !muted; setMuted(m); setMutedState(m); };
 
   useEffect(() => () => window.clearTimeout(bannerTimer.current), []);
+
+  // announce a newly-unlocked weapon when the night that opens it begins
+  useEffect(() => {
+    const w = hud.wave;
+    if (w <= lastWave.current) return;
+    lastWave.current = w;
+    const just = TOWER_TYPES.find((tw) => tw.unlock === w);
+    if (!just) return;
+    setUnlockToast(just.name);
+    const id = window.setTimeout(() => setUnlockToast(null), 3200);
+    return () => window.clearTimeout(id);
+  }, [hud.wave]);
 
   // when the first weapon goes down, flash a one-time "tap to upgrade" hint
   useEffect(() => {
@@ -192,16 +206,27 @@ export function Lawn() {
           )}
           {upgradeHint && <div className="gol-hint">{t('tapUpgrade2')}</div>}
 
-          {/* ── build tray: the weapons, their cost, and which is selected ── */}
+          {/* ── build tray: 5 weapons (later two unlock by night), cost + selection.
+                Swipe horizontally to reach them all. ── */}
           <div className="gol-tray">
             {TOWER_TYPES.map((tw, i) => {
               const Ico = TYPE_ICON[i] || Flame;
+              const locked = (hud.wave || 1) < tw.unlock;
               const affordable = hud.cash >= tw.cost;
+              if (locked) {
+                return (
+                  <button key={tw.id} className="gol-card gol-card--locked" disabled>
+                    <span className="gol-card-ico"><Lock size={22} /></span>
+                    <span className="gol-card-name">{tw.name}</span>
+                    <span className="gol-card-cost gol-card-unlock">{t('wave')} {tw.unlock}</span>
+                  </button>
+                );
+              }
               return (
                 <button
                   key={tw.id}
                   className={`gol-card${i === selectedType ? ' gol-card--sel' : ''}${affordable ? '' : ' gol-card--poor'}`}
-                  onPointerDown={(e) => { e.stopPropagation(); setSelectedType(i); }}
+                  onClick={(e) => { e.stopPropagation(); setSelectedType(i); }}
                 >
                   <span className="gol-card-ico"><Ico size={26} /></span>
                   <span className="gol-card-name">{tw.name}</span>
@@ -210,6 +235,12 @@ export function Lawn() {
               );
             })}
           </div>
+          {unlockToast && (
+            <div className="gol-unlock" key={unlockToast}>
+              <span className="gol-unlock-k">{t('newWeapon')}</span>
+              <span className="gol-unlock-n">{unlockToast}</span>
+            </div>
+          )}
         </>
       )}
 

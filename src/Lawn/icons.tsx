@@ -73,6 +73,35 @@ export function Burst({ size = 22 }: { size?: number }) {
   );
 }
 
+export function Bolt({ size = 22 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>
+      <path d="M13.4 2L5 13.2h5.1L9 22l9.4-12.3h-5.3z" fill={C.storm} stroke="#a98a14" strokeWidth="1" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function Venom({ size = 22 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>
+      <path d="M12 2.5c3.4 4.2 6 7.6 6 11a6 6 0 0 1-12 0c0-3.4 2.6-6.8 6-11z" fill={C.venom} />
+      <circle cx="9.8" cy="12.4" r="1.5" fill="#1d3b10" />
+      <circle cx="14" cy="14.4" r="1.1" fill="#1d3b10" />
+    </svg>
+  );
+}
+
+export function Lock({ size = 18 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>
+      <path d="M8 10V8a4 4 0 0 1 8 0v2" fill="none" stroke={C.boneD} strokeWidth="1.9" strokeLinecap="round" />
+      <rect x="5.5" y="10" width="13" height="9.5" rx="2" fill={C.boneD} />
+      <circle cx="12" cy="14.2" r="1.5" fill={C.ink} />
+      <rect x="11.2" y="14.6" width="1.6" height="3" rx="0.7" fill={C.ink} />
+    </svg>
+  );
+}
+
 export function Crown({ size = 16 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>

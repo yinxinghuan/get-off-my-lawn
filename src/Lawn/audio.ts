@@ -52,6 +52,8 @@ export const sfx = {
   fire() { noise(0.05, 0.04, 1600); tone(640, 0.05, 'square', 0.05, 420); },          // quick spit
   frost() { tone(1500, 0.13, 'sine', 0.06, 2100); tone(950, 0.18, 'triangle', 0.03); }, // chime
   mortar() { tone(130, 0.24, 'sawtooth', 0.16, 52); noise(0.2, 0.12, 180); },           // low boom
+  storm() { noise(0.06, 0.06, 2600); tone(1900, 0.07, 'square', 0.05, 700); },          // electric zap-crackle
+  plague() { noise(0.16, 0.05, 500); tone(320, 0.16, 'sine', 0.04, 180); },             // wet hiss
   boom() { tone(90, 0.3, 'sawtooth', 0.2, 40); noise(0.26, 0.16, 150); },               // impact blast
   splat() { noise(0.14, 0.13, 400); tone(160, 0.12, 'sawtooth', 0.08, 60); },
   reachHouse() { tone(200, 0.18, 'sawtooth', 0.2, 70); noise(0.12, 0.1, 200); },

@@ -31,6 +31,7 @@ const STR: Record<string, { en: string; zh: string }> = {
   guestbook:  { en: 'EPITAPHS', zh: '墓志铭' },
   newBest:    { en: 'NEW BEST!', zh: '新纪录！' },
   boss:       { en: 'BOSS RISES', zh: '强敌降临' },
+  newWeapon:  { en: 'NEW WEAPON', zh: '解锁新武器' },
 };
 
 export function t(key: keyof typeof STR): string {

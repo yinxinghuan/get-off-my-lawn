@@ -72,9 +72,18 @@ const GAP_Z = [
   (ROWS_Z[1] + ROWS_Z[2]) / 2,
   (ROWS_Z[2] + ROWS_Z[3]) / 2,
 ];
-const PLOT_SPOTS: [number, number][] = (() => {
-  const spots: [number, number][] = [];
-  for (const gz of GAP_Z) for (const x of [-2.1, 0, 2.1]) spots.push([x, gz]);
+// [x, z, unlockNight] — 9 core sockets open from the start; 6 in-fill sockets
+// (the half-columns between them) open up as the nights climb, so late game keeps
+// giving you NEW ground to expand onto, not just towers to upgrade.
+const PLOT_SPECS: [number, number, number][] = (() => {
+  const spots: [number, number, number][] = [];
+  for (const gz of GAP_Z) for (const x of [-2.1, 0, 2.1]) spots.push([x, gz, 0]);
+  const infill: [number, number, number][] = [
+    [-1.05, GAP_Z[1], 3], [1.05, GAP_Z[1], 5],
+    [-1.05, GAP_Z[0], 7], [1.05, GAP_Z[2], 9],
+    [1.05, GAP_Z[0], 11], [-1.05, GAP_Z[2], 13],
+  ];
+  spots.push(...infill);
   return spots;
 })();
 
@@ -174,6 +183,7 @@ interface Enemy {
   hp: number; maxHp: number; spd: number;
   phase: number; dead: boolean; reached: boolean;
   slow: number; // remaining slow timer (sec)
+  poison: number; poisonDps: number; poisonT: number; // VENOM damage-over-time + drip-fx timer
   hpBar: THREE.Sprite | null;
   dying: number; vy: number; spin: number; dustT: number; // death-launch anim + foot dust
   hitFlash: number; hitStop: number; flashOn: boolean;     // damage flinch (flash + brief freeze)
@@ -182,12 +192,14 @@ interface Tower {
   g: THREE.Group; head: THREE.Group; ring: THREE.Mesh; pips: THREE.Sprite; upArrow: THREE.Sprite;
   type: number; color: number; x: number; z: number; level: number;
   range: number; dmg: number; rate: number; slow: number; splash: number; chillR: number; cd: number; yaw: number;
+  chain: number; chainR: number; dot: number; dotTime: number; // STORM chain + VENOM poison
   light?: THREE.PointLight; flicker: number; recoil: number; headY: number;
 }
-interface Plot { x: number; z: number; disc: THREE.Mesh; marker: THREE.Group; ring: THREE.Mesh; ghost: THREE.Group; tower: Tower | null; }
+interface Plot { x: number; z: number; disc: THREE.Mesh; marker: THREE.Group; ring: THREE.Mesh; ghost: THREE.Group; tower: Tower | null; unlock: number; live: boolean; }
 interface Proj {
   g: THREE.Mesh; x: number; y: number; z: number; tx: number; ty: number; tz: number;
   target: Enemy; dmg: number; slow: number; splash: number; color: number; chill: number;
+  dot: number; dotTime: number;                            // VENOM poison carried to the target
   arc: boolean; t: number; flight: number;                 // ballistic (mortar) lob
   sx: number; sy: number; sz: number; ex: number; ey: number; ez: number; arcH: number;
 }
@@ -329,6 +341,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       if (!hits.length) return;
       const plot = st.plots.find((p) => p.disc === hits[0].object);
       if (!plot) return;
+      if (!plot.live) { bounce(plot.marker); sfx.splat(); return; } // dormant plot — opens on a later night
       if (!plot.tower) {
         const ti = st.selectedType;
         const cost = TOWER_TYPES[ti].cost;
@@ -392,8 +405,10 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       const rows: [number, number][] = [[0, 0], [2, 0], [4, 0], [6, 0], [1, 1], [3, 1], [5, 1], [7, 1]];
       const plan: [number, number, number][] = [ // plotIdx, type, level
         [0, 0, 1], [2, 0, 2], [4, 0, 3], [6, 0, 4],
-        [1, 1, 1], [3, 1, 2], [5, 1, 3], [7, 1, 4],
-        [8, 2, 4],
+        [1, 1, 1], [3, 1, 2], [5, 1, 4],
+        [7, 2, 4], [8, 2, 2],
+        [9, 3, 2], [11, 3, 4],   // STORM coils
+        [10, 4, 2], [12, 4, 4],  // VENOM urns
       ];
       void rows;
       plan.forEach(([idx, ty, lvl]) => {
@@ -446,6 +461,16 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
     // dim when you can't yet pay — so "when you can build" reads at a glance
     for (const p of st.plots) {
       if (p.tower) { p.marker.visible = false; continue; }
+      if (!p.live) {
+        // a dormant future plot — a faint dim ring (no glow, no ghost) so you can
+        // see new ground will open here, but it isn't buildable yet
+        p.marker.visible = true;
+        const rm = p.ring.material as THREE.MeshBasicMaterial;
+        rm.color.setHex(0x46504a); rm.opacity = 0.16;
+        p.ring.scale.setScalar(0.8);
+        p.ghost.visible = false;
+        continue;
+      }
       const aff = st.cash >= TOWER_TYPES[st.selectedType].cost;
       p.marker.visible = true;
       const rm = p.ring.material as THREE.MeshBasicMaterial;
@@ -520,6 +545,15 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
         continue;
       }
       if (en.dead) continue;
+      // VENOM poison — drains HP over time even after the urn stops firing
+      if (en.poison > 0) {
+        en.poison -= dt;
+        en.hp -= en.poisonDps * dt;
+        if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
+        en.poisonT -= dt;
+        if (en.poisonT <= 0) { splash(fx, en.x, 0.55, en.z, 0x9be83a); en.poisonT = 0.32; }
+        if (en.hp <= 0) { killEnemy(st, en, root); continue; }
+      }
       let spd = en.spd;
       if (en.slow > 0) { en.slow -= dt; spd *= 0.5; }
       if (en.hitStop > 0) { en.hitStop -= dt; spd = 0; }  // momentary stagger
@@ -588,7 +622,8 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
           fireWater(fx, st, tw, best);
           tw.recoil = tw.splash > 0 ? 0.2 : 0.12; // a kick when it shoots
           const k = TOWER_TYPES[tw.type].head;
-          if (k === 'flame') sfx.fire(); else if (k === 'crystal') sfx.frost(); else sfx.mortar();
+          if (k === 'flame') sfx.fire(); else if (k === 'crystal') sfx.frost();
+          else if (k === 'coil') sfx.storm(); else if (k === 'urn') sfx.plague(); else sfx.mortar();
         }
       }
       // recoil decay — the head kicks back along its aim, then settles
@@ -626,6 +661,8 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       if (d <= step || en.dead) {
         if (!en.dead) {
           en.hp -= pr.dmg; en.slow = Math.max(en.slow, pr.slow); hitReact(en, pr.dmg);
+          // VENOM — stamp a poison that keeps ticking the enemy down (refresh, keep strongest)
+          if (pr.dot > 0) { en.poisonDps = Math.max(en.poisonDps, pr.dot); en.poison = Math.max(en.poison, pr.dotTime); }
           if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
           if (en.hp <= 0) killEnemy(st, en, root);
         }
@@ -771,9 +808,9 @@ function buildBoard(root: THREE.Group, st: any) {
   }
 
   // tower plots — each on a mossy stone build-pad (reads as an intentional pedestal)
-  for (const [x, z] of PLOT_SPOTS) {
+  for (const [x, z, unlock] of PLOT_SPECS) {
     root.add(makePad(x, z));
-    const plot = makePlot(x, z);
+    const plot = makePlot(x, z, unlock);
     root.add(plot.disc); root.add(plot.marker);
     st.plots.push(plot);
   }
@@ -851,7 +888,7 @@ function makeGravestone(i: number): THREE.Group {
   return g;
 }
 
-function makePlot(x: number, z: number): Plot {
+function makePlot(x: number, z: number, unlock = 0): Plot {
   // tap target = a tall invisible COLUMN (not a flat disc) so tapping either the
   // ground socket OR the tower that stands on it both register — this is what
   // made placing/upgrading hard. Stays visible:true (raycaster skips visible:false)
@@ -886,7 +923,7 @@ function makePlot(x: number, z: number): Plot {
   ghost.add(orb);
   marker.add(ghost);
 
-  return { x, z, disc, marker, ring, ghost, tower: null };
+  return { x, z, disc, marker, ring, ghost, tower: null, unlock, live: unlock <= 0 };
 }
 
 // ─── towers ─────────────────────────────────────────────────────────────────
@@ -894,16 +931,28 @@ function makePlot(x: number, z: number): Plot {
 export interface TowerType {
   id: string; name: string; cost: number; color: number;
   range: number; dmg: number; rate: number; slow: number; splash: number; chillR: number;
-  head: 'flame' | 'crystal' | 'mortar';
+  head: 'flame' | 'crystal' | 'mortar' | 'coil' | 'urn';
+  unlock: number;        // night this weapon becomes buildable (0 = from the very start)
+  chain?: number;        // STORM: how many extra enemies the bolt arcs to
+  chainR?: number;       // STORM: arc reach between links
+  dot?: number;          // VENOM: poison damage per second applied on hit
+  dotTime?: number;      // VENOM: poison duration (sec)
   blurb: string;
 }
+// Five weapons now. The first three are open from the start; STORM and VENOM
+// unlock on later nights, so the late game keeps handing you NEW tools (not just
+// "upgrade the same three"). Each fills a distinct combat role.
 export const TOWER_TYPES: TowerType[] = [
   // fast cheap single-target DPS — Ember
-  { id: 'brazier', name: 'Fire Cannon', cost: 80, color: 0xff8a3c, range: 2.7, dmg: 7, rate: 3.0, slow: 0.2, splash: 0, chillR: 0, head: 'flame', blurb: 'Rapid fireballs' },
+  { id: 'brazier', name: 'Fire Cannon', cost: 80, color: 0xff8a3c, range: 2.7, dmg: 7, rate: 3.0, slow: 0.2, splash: 0, chillR: 0, head: 'flame', unlock: 0, blurb: 'Rapid fireballs' },
   // control: low damage, strong slow + chills a small area — Frost
-  { id: 'frost', name: 'Frost Lance', cost: 110, color: 0x8fe0ff, range: 2.7, dmg: 5, rate: 1.2, slow: 2.4, splash: 0, chillR: 1.2, head: 'crystal', blurb: 'Slows & chills' },
+  { id: 'frost', name: 'Frost Lance', cost: 110, color: 0x8fe0ff, range: 2.7, dmg: 5, rate: 1.2, slow: 2.4, splash: 0, chillR: 1.2, head: 'crystal', unlock: 0, blurb: 'Slows & chills' },
   // heavy slow-firing artillery: lobbed AoE blast — Haunt
-  { id: 'mortar', name: 'Bone Mortar', cost: 160, color: 0xc79bf0, range: 3.3, dmg: 22, rate: 0.55, slow: 0.3, splash: 1.5, chillR: 0, head: 'mortar', blurb: 'Lobbed splash blast' },
+  { id: 'mortar', name: 'Bone Mortar', cost: 160, color: 0xc79bf0, range: 3.3, dmg: 22, rate: 0.55, slow: 0.3, splash: 1.5, chillR: 0, head: 'mortar', unlock: 0, blurb: 'Lobbed splash blast' },
+  // STORM — chain lightning that leaps between clustered dead (shreds packs) — unlocks night 4
+  { id: 'storm', name: 'Storm Coil', cost: 200, color: 0xffe24d, range: 3.0, dmg: 11, rate: 1.5, slow: 0, splash: 0, chillR: 0, head: 'coil', unlock: 4, chain: 2, chainR: 2.0, blurb: 'Chain lightning' },
+  // VENOM — sprays a plague that ticks even the beefiest elites down over time — unlocks night 8
+  { id: 'venom', name: 'Plague Urn', cost: 240, color: 0x9be83a, range: 2.9, dmg: 6, rate: 1.1, slow: 0, splash: 0, chillR: 0, head: 'urn', unlock: 8, dot: 16, dotTime: 4, blurb: 'Poison over time' },
 ];
 
 function plantTower(root: THREE.Group, plot: Plot, typeIdx: number): Tower {
@@ -919,6 +968,12 @@ function plantTower(root: THREE.Group, plot: Plot, typeIdx: number): Tower {
   } else if (T.head === 'crystal') {   // a tapered stone pillar
     const pil = box(0.26, 0.34, 0.26, 0x3c4248, 0, 0.66, 0); flatify(pil); g.add(pil);
     const cap = cone(0.22, 0.16, 4, 0x4a5158, 0, 0.9, 0); flatify(cap); g.add(cap);
+  } else if (T.head === 'coil') {       // STORM — an insulated iron base for the tesla rod
+    const drum = cyl(0.3, 0.34, 0.26, 10, 0x33373a, 0, 0.7, 0); flatify(drum); g.add(drum);
+    const cap = cyl(0.16, 0.22, 0.1, 10, 0x4a5158, 0, 0.86, 0); flatify(cap); g.add(cap);
+  } else if (T.head === 'urn') {        // VENOM — a stone basin cradling the plague urn
+    const basin = cyl(0.34, 0.26, 0.18, 10, 0x33402c, 0, 0.72, 0); flatify(basin); g.add(basin);
+    const rim = cyl(0.36, 0.34, 0.06, 10, 0x46562f, 0, 0.83, 0); flatify(rim); g.add(rim);
   } else {                              // a heavy armoured gun platform
     const blk = box(0.46, 0.22, 0.46, 0x3a3d36, 0, 0.7, 0); flatify(blk); g.add(blk);
   }
@@ -936,6 +991,7 @@ function plantTower(root: THREE.Group, plot: Plot, typeIdx: number): Tower {
   const tw: Tower = {
     g, head, ring, pips, upArrow, type: typeIdx, x: plot.x, z: plot.z, level: 1,
     range: T.range, dmg: T.dmg, rate: T.rate, slow: T.slow, splash: T.splash, chillR: T.chillR,
+    chain: T.chain || 0, chainR: T.chainR || 0, dot: T.dot || 0, dotTime: T.dotTime || 0,
     color: T.color, cd: 0, yaw: 0, light, flicker: Math.random() * 6,
     recoil: 0, headY: head.position.y,
   };
@@ -963,8 +1019,44 @@ function rebuildHead(tw: Tower) {
   const shape = TOWER_TYPES[tw.type].head, lv = Math.min(TOWER_VFORM_MAX, tw.level), col = tw.color;
   if (shape === 'flame') flameHead(head, lv, col);
   else if (shape === 'crystal') crystalHead(head, lv, col);
+  else if (shape === 'coil') coilHead(head, lv, col);
+  else if (shape === 'urn') urnHead(head, lv, col);
   else mortarHead(head, lv, col);
   head.scale.setScalar(1); // keep the head anchored — deep levels read via the LV badge + brighter light
+}
+// STORM — a tesla rod topped by a glowing sphere, with prongs that multiply each
+// level (1 → cross of 2 → 4-prong ring → caged dome). Distinct vertical silhouette.
+function coilHead(head: THREE.Group, lv: number, col: number) {
+  const rod = cyl(0.05, 0.07, 0.3 + lv * 0.05, 6, 0x5a6066, 0, 0.15 + lv * 0.025, 0); flatify(rod); head.add(rod);
+  const orbY = 0.32 + lv * 0.05;
+  const orb = ball(0.12 + lv * 0.018, col, 0, orbY, 0, 1); orb.castShadow = false; emis(orb, col, 2.0); head.add(orb);
+  const prongs = lv <= 1 ? 0 : lv === 2 ? 2 : lv === 3 ? 4 : 6;
+  for (let i = 0; i < prongs; i++) {
+    const a = (i / prongs) * Math.PI * 2;
+    const px = Math.cos(a) * 0.2, pz = Math.sin(a) * 0.2;
+    const pr = cyl(0.022, 0.022, 0.22, 5, 0x71777d, px, orbY, pz, { e: col, ei: 0.4 });
+    pr.rotation.z = Math.cos(a) * 0.5; pr.rotation.x = -Math.sin(a) * 0.5; flatify(pr); head.add(pr);
+    const tip = ball(0.04, col, px * 1.5, orbY + 0.12, pz * 1.5, 0); tip.castShadow = false; emis(tip, col, 1.6); head.add(tip);
+  }
+  if (lv >= 4) { const halo = cyl(0.3, 0.3, 0.03, 14, col, 0, orbY, 0); halo.rotation.x = Math.PI / 2; emis(halo, col, 0.7); head.add(halo); }
+}
+// VENOM — a bubbling urn with a venom dome; level adds spouts + a thicker rim of
+// dripping toxin. Distinct rounded, organic silhouette (vs angular crystal/coil).
+function urnHead(head: THREE.Group, lv: number, col: number) {
+  const body = cyl(0.16 + lv * 0.01, 0.1, 0.26 + lv * 0.02, 10, 0x2f3a24, 0, 0.13, 0); flatify(body); head.add(body);
+  const brew = ball(0.16 + lv * 0.014, col, 0, 0.28 + lv * 0.012, 0, 1); brew.castShadow = false; emis(brew, col, 1.5); head.add(brew);
+  const bubbles = 1 + lv;
+  for (let i = 0; i < bubbles; i++) {
+    const a = (i / bubbles) * Math.PI * 2 + lv;
+    const b = ball(0.04 + (i % 2) * 0.02, col, Math.cos(a) * 0.1, 0.34 + lv * 0.02, Math.sin(a) * 0.1, 0);
+    b.castShadow = false; emis(b, col, 1.7); head.add(b);
+  }
+  const spouts = lv <= 1 ? 0 : lv === 2 ? 2 : lv === 3 ? 3 : 4;
+  for (let i = 0; i < spouts; i++) {
+    const a = (i / spouts) * Math.PI * 2;
+    const sp = cyl(0.04, 0.06, 0.16, 6, 0x46562f, Math.cos(a) * 0.17, 0.16, Math.sin(a) * 0.17);
+    sp.rotation.z = Math.cos(a) * 1.1; sp.rotation.x = -Math.sin(a) * 1.1; flatify(sp); head.add(sp);
+  }
 }
 // a forward jet of rounded flame puffs from origin ox, fanning at angle ang
 function flameJet(head: THREE.Group, ox: number, ang: number, reach: number, puffs: number, col: number) {
@@ -1128,6 +1220,11 @@ function applyTowerLevel(tw: Tower) {
   tw.range = T.range + Math.min(5, L) * 0.26;
   tw.dmg = Math.round(T.dmg * (1 + L * 0.5));
   tw.rate = T.rate * (1 + Math.min(6, L) * 0.16);
+  // STORM arcs to +1 enemy every 2 levels; VENOM poison ticks harder each level
+  tw.chain = T.chain ? T.chain + Math.floor(L / 2) : 0;
+  tw.chainR = T.chainR || 0;
+  tw.dot = T.dot ? Math.round(T.dot * (1 + L * 0.5)) : 0;
+  tw.dotTime = T.dotTime || 0;
   rebuildHead(tw); // shape grows/changes with level
   if (tw.light) { const li = Math.min(8, tw.level); tw.light.intensity = 5 + li * 1.6; tw.light.distance = 3 + li * 0.4; }
   tw.ring.geometry.dispose();
@@ -1164,7 +1261,7 @@ function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
   const en: Enemy = {
     g, def, dist: 0, x, z, laneOff,
     hp: hpScaled, maxHp: hpScaled, spd: def.spd * speedK, phase: Math.random() * 6,
-    dead: false, reached: false, slow: 0, hpBar,
+    dead: false, reached: false, slow: 0, poison: 0, poisonDps: 0, poisonT: 0, hpBar,
     dying: 0, vy: 0, spin: 0, dustT: Math.random() * 0.3,
     hitFlash: 0, hitStop: 0, flashOn: false,
   };
@@ -1200,11 +1297,14 @@ function muzzleFlash(fx: THREE.Group, x: number, y: number, z: number, color: nu
 }
 function fireWater(fx: THREE.Group, st: any, tw: Tower, target: Enemy) {
   const col = tw.color;
+  const kind = TOWER_TYPES[tw.type].head;
   // spawn from the barrel muzzle (forward of the swivelled head)
   const fxd = Math.sin(tw.yaw), fzd = Math.cos(tw.yaw);
   const mx = tw.x + fxd * 0.5, mz = tw.z + fzd * 0.5, my = 1.05;
+  if (kind === 'coil') { stormStrike(fx, st, tw, target); return; } // instant chain lightning, no projectile
   muzzleFlash(fx, mx, my, mz, col);
   const base = { target, dmg: tw.dmg, slow: tw.slow, splash: tw.splash, chill: tw.chillR, color: col,
+    dot: tw.dot, dotTime: tw.dotTime,
     tx: target.x, ty: 0.5, tz: target.z, x: mx, y: my, z: mz };
   if (tw.splash > 0) {
     // MORTAR — a lobbed shell arcing onto the target's ground spot, then it bursts
@@ -1221,6 +1321,61 @@ function fireWater(fx: THREE.Group, st: any, tw: Tower, target: Enemy) {
     emis(g, col, 1.6); fx.add(g);
     st.projs.push({ ...base, g, arc: false, t: 0, flight: 0, sx: 0, sy: 0, sz: 0, ex: 0, ey: 0, ez: 0, arcH: 0 });
   }
+}
+// STORM — an INSTANT chain of lightning: zap the target, then leap to the nearest
+// not-yet-hit enemy within reach, repeating for `chain` extra links (each weaker).
+// Great against the dense packs the late nights throw at you.
+function stormStrike(fx: THREE.Group, st: any, tw: Tower, target: Enemy) {
+  let px = tw.x + Math.sin(tw.yaw) * 0.4, pz = tw.z + Math.cos(tw.yaw) * 0.4, py = 1.25;
+  const hit = new Set<Enemy>();
+  let cur: Enemy | null = target;
+  let dmg = tw.dmg;
+  const links = 1 + (tw.chain || 0);
+  for (let i = 0; i < links && cur; i++) {
+    lightningBolt(fx, px, py, pz, cur.x, 0.7, cur.z, tw.color);
+    cur.hp -= dmg; hitReact(cur, dmg);
+    if (cur.hpBar) drawHpBar(cur.hpBar, cur.hp / cur.maxHp);
+    splash(fx, cur.x, 0.6, cur.z, tw.color);
+    hit.add(cur);
+    if (cur.hp <= 0) killEnemy(st, cur, fx);
+    px = cur.x; pz = cur.z; py = 0.7;
+    dmg *= 0.72; // each successive arc hits softer
+    // next link = nearest live, un-hit enemy within chain reach
+    let nxt: Enemy | null = null, nd = (tw.chainR || 2) * (tw.chainR || 2);
+    for (const e of st.enemies) {
+      if (e.dead || hit.has(e)) continue;
+      const dx = e.x - px, dz = e.z - pz, d2 = dx * dx + dz * dz;
+      if (d2 <= nd) { nd = d2; nxt = e; }
+    }
+    cur = nxt;
+  }
+}
+// a brief jagged bolt of glowing segments between two points (own materials so the
+// fade can't pollute the shared prim-material cache)
+function lightningBolt(fx: THREE.Group, ax: number, ay: number, az: number, bx: number, by: number, bz: number, col: number) {
+  const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.95, depthWrite: false });
+  const g = new THREE.Group();
+  const up = new THREE.Vector3(0, 1, 0);
+  const seg = 5; let px = ax, py = ay, pz = az;
+  for (let i = 1; i <= seg; i++) {
+    const t = i / seg;
+    const jx = i < seg ? (Math.random() - 0.5) * 0.36 : 0, jz = i < seg ? (Math.random() - 0.5) * 0.36 : 0;
+    const nx = ax + (bx - ax) * t + jx, ny = ay + (by - ay) * t, nz = az + (bz - az) * t + jz;
+    const dx = nx - px, dy = ny - py, dz = nz - pz, len = Math.hypot(dx, dy, dz) || 1e-3;
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, len, 4), mat);
+    m.position.set((px + nx) / 2, (py + ny) / 2, (pz + nz) / 2);
+    m.quaternion.setFromUnitVectors(up, new THREE.Vector3(dx / len, dy / len, dz / len));
+    m.castShadow = false; g.add(m);
+    px = nx; py = ny; pz = nz;
+  }
+  fx.add(g);
+  const start = performance.now();
+  (function step() {
+    const e = (performance.now() - start) / 170;
+    if (e >= 1) { fx.remove(g); g.traverse((o) => { const ge = (o as THREE.Mesh).geometry; if (ge) ge.dispose(); }); mat.dispose(); return; }
+    mat.opacity = 0.95 * (1 - e);
+    requestAnimationFrame(step);
+  })();
 }
 
 interface Particle { m: THREE.Mesh; vx: number; vy: number; vz: number; life: number; life0: number; grav: number; grow: number; o0: number; }
@@ -1377,6 +1532,16 @@ function startWave(st: any, onWave: (w: number) => void) {
       }
     }
   }
+  // open any new build-plots whose night has arrived — a juicy reveal so the
+  // player sees fresh ground unlock (more room to expand late game)
+  for (const p of st.plots) {
+    if (!p.live && st.wave >= p.unlock) {
+      p.live = true;
+      popIn(p.marker);
+      ringPulse(st.fxLayer, p.x, p.z, 0x79e0ad);
+      sfx.plant();
+    }
+  }
   st.spawnT = 0.3;
   sfx.wave();
   onWave(st.wave, isBoss);
@@ -1400,7 +1565,7 @@ function resetGame(root: THREE.Group, fx: THREE.Group, st: any, onHud: (h: HudSt
   for (const tw of st.towers) { root.remove(tw.g); disposeGroup(tw.g); }
   for (const pr of st.projs) { fx.remove(pr.g); disposeGroup(pr.g); }
   st.enemies = []; st.towers = []; st.projs = [];
-  for (const p of st.plots) { p.tower = null; p.marker.visible = true; }
+  for (const p of st.plots) { p.tower = null; p.marker.visible = true; p.live = p.unlock <= 0; }
   st.lives = START_LIVES; st.cash = START_CASH; st.score = 0; st.wave = 0;
   st.spawnQ = []; st.betweenWaves = true; st.waveBreak = 3.5; st.over = false; // longer first breather to place a tower
   st.demoReady = false; st.attractT = 0;
