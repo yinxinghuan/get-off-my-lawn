@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -21,11 +21,12 @@ const UPGRADE_COST = (lvl: number) => Math.round(55 * Math.pow(lvl, 1.4));
 const TOWER_MAX_LVL = 99;   // effectively no ceiling — the only limit is how long you last
 const TOWER_VFORM_MAX = 4;  // the head's silhouette has 4 distinct forms; deeper levels keep the top form (+ grow)
 const ENEMY_SCALE = 0.46;
-// Late waves used to keep spawning even when the path was already packed. That
-// creates a draw-call and shadow-map spike that is especially rough on phones.
-// Pausing the queue here changes the *pace*, not the wave's enemy count.
-const MAX_ACTIVE_ENEMIES = 28;
 const MAX_PARTICLES = 180;
+// Visual load is deliberately separate from simulation load: it lets a packed
+// late wave keep its original spawn timing and difficulty while temporarily
+// dropping decorative work on slower devices.
+let visualLoadTier = 0;
+let particleLimit = MAX_PARTICLES;
 
 // ── Regular serpentine grave-path (boustrophedon): straight rows that switch
 // back across the full field, joined by U-turns at alternating ends → a clean,
@@ -295,6 +296,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
     motes: null as THREE.Points | null,
     mist: null as THREE.Group | null,
     selectedType: 0,
+    perfTier: 0,
   });
   S.current.selectedType = selectedType; // keep the chosen weapon in sync each render
 
@@ -528,7 +530,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
         if (st.waveBreak <= 0) startWave(st, onWave);
       } else {
         st.spawnT -= dt;
-        if (st.spawnT <= 0 && st.spawnQ.length && st.enemies.length < MAX_ACTIVE_ENEMIES) {
+        if (st.spawnT <= 0 && st.spawnQ.length) {
           const def = st.spawnQ.shift()!;
           spawnEnemy(root, st, def);
           st.spawnT = st.spawnGap;
@@ -538,6 +540,24 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
           st.waveBreak = 2.6;
         }
       }
+    }
+
+    // Preserve the full simulation; only reduce decoration while a dense mob is
+    // visible. The thresholds have hysteresis through the three stable bands,
+    // avoiding frame-by-frame quality churn around a single enemy count.
+    let nextPerfTier = st.perfTier;
+    if (st.perfTier === 0 && st.enemies.length >= 15) nextPerfTier = 1;
+    else if (st.perfTier === 1 && st.enemies.length >= 25) nextPerfTier = 2;
+    else if (st.perfTier === 1 && st.enemies.length < 13) nextPerfTier = 0;
+    else if (st.perfTier === 2 && st.enemies.length < 23) nextPerfTier = st.enemies.length >= 13 ? 1 : 0;
+    if (nextPerfTier !== st.perfTier) {
+      st.perfTier = nextPerfTier;
+      visualLoadTier = nextPerfTier;
+      particleLimit = nextPerfTier === 2 ? 48 : nextPerfTier === 1 ? 96 : MAX_PARTICLES;
+      // At peak load, retain the already-rendered shadows but stop regenerating
+      // the map for every moving enemy. Restore normally once the pack thins.
+      gl.shadowMap.autoUpdate = nextPerfTier < 2;
+      if (nextPerfTier < 2) gl.shadowMap.needsUpdate = true;
     }
 
     // ── enemies march along the winding path ──
@@ -559,7 +579,10 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
         // expensive on mobile GPUs. Damage still ticks at 60fps; only its tiny UI
         // representation is sampled at 8fps.
         en.hpDrawT -= dt;
-        if (en.hpBar && en.hpDrawT <= 0) { drawHpBar(en.hpBar, en.hp / en.maxHp); en.hpDrawT = 0.125; }
+        if (en.hpBar && en.hpDrawT <= 0) {
+          drawHpBar(en.hpBar, en.hp / en.maxHp);
+          en.hpDrawT = st.perfTier === 2 ? 0.25 : st.perfTier === 1 ? 0.16 : 0.125;
+        }
         en.poisonT -= dt;
         if (en.poisonT <= 0) { splash(fx, en.x, 0.55, en.z, 0x9be83a); en.poisonT = 0.32; }
         if (en.hp <= 0) { killEnemy(st, en, root); continue; }
@@ -1391,7 +1414,7 @@ function lightningBolt(fx: THREE.Group, ax: number, ay: number, az: number, bx: 
 interface Particle { m: THREE.Mesh; vx: number; vy: number; vz: number; life: number; life0: number; grav: number; grow: number; o0: number; }
 const PARTICLES: Particle[] = [];
 function particleBudget(requested: number) {
-  return Math.max(0, Math.min(requested, MAX_PARTICLES - PARTICLES.length));
+  return Math.max(0, Math.min(requested, particleLimit - PARTICLES.length));
 }
 // enemy flinch on hit — staggers ONLY if the hit is big relative to the enemy's
 // max HP (a poise threshold). So bosses / heavy undead shrug off chip damage and
@@ -1699,6 +1722,27 @@ function Lights() {
   );
 }
 
+// At the heaviest crowd density, composition remains readable without bloom and
+// vignette. Those full-screen passes return automatically as the field clears;
+// this never changes player input, enemy behavior, or wave timing.
+function PerformanceEffects() {
+  const [reduced, setReduced] = useState(false);
+  const previousTier = useRef(-1);
+  useFrame(() => {
+    if (previousTier.current === visualLoadTier) return;
+    previousTier.current = visualLoadTier;
+    setReduced(visualLoadTier >= 2);
+  });
+  return (
+    <EffectComposer enabled={!reduced}>
+      {/* no mipmapBlur — it produces rainbow chroma noise in dark areas on mobile
+          half-float buffers. Higher threshold keeps the dark ground out of bloom. */}
+      <Bloom intensity={0.7} luminanceThreshold={0.62} luminanceSmoothing={0.25} />
+      <Vignette eskil={false} offset={0.2} darkness={0.62} />
+    </EffectComposer>
+  );
+}
+
 // ─── exported Canvas wrapper ────────────────────────────────────────────────
 export default function Scene(props: Props) {
   return (
@@ -1722,12 +1766,7 @@ export default function Scene(props: Props) {
     >
       <Lights />
       <World {...props} />
-      <EffectComposer>
-        {/* no mipmapBlur — it produces rainbow chroma noise in dark areas on mobile
-            half-float buffers. Higher threshold keeps the dark ground out of bloom. */}
-        <Bloom intensity={0.7} luminanceThreshold={0.62} luminanceSmoothing={0.25} />
-        <Vignette eskil={false} offset={0.2} darkness={0.62} />
-      </EffectComposer>
+      <PerformanceEffects />
     </Canvas>
   );
 }
