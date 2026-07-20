@@ -21,6 +21,11 @@ const UPGRADE_COST = (lvl: number) => Math.round(55 * Math.pow(lvl, 1.4));
 const TOWER_MAX_LVL = 99;   // effectively no ceiling — the only limit is how long you last
 const TOWER_VFORM_MAX = 4;  // the head's silhouette has 4 distinct forms; deeper levels keep the top form (+ grow)
 const ENEMY_SCALE = 0.46;
+// Late waves used to keep spawning even when the path was already packed. That
+// creates a draw-call and shadow-map spike that is especially rough on phones.
+// Pausing the queue here changes the *pace*, not the wave's enemy count.
+const MAX_ACTIVE_ENEMIES = 28;
+const MAX_PARTICLES = 180;
 
 // ── Regular serpentine grave-path (boustrophedon): straight rows that switch
 // back across the full field, joined by U-turns at alternating ends → a clean,
@@ -187,6 +192,7 @@ interface Enemy {
   hpBar: THREE.Sprite | null;
   dying: number; vy: number; spin: number; dustT: number; // death-launch anim + foot dust
   hitFlash: number; hitStop: number; flashOn: boolean;     // damage flinch (flash + brief freeze)
+  hpDrawT: number;                                         // throttle CanvasTexture uploads from poison ticks
 }
 interface Tower {
   g: THREE.Group; head: THREE.Group; ring: THREE.Mesh; pips: THREE.Sprite; upArrow: THREE.Sprite;
@@ -522,7 +528,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
         if (st.waveBreak <= 0) startWave(st, onWave);
       } else {
         st.spawnT -= dt;
-        if (st.spawnT <= 0 && st.spawnQ.length) {
+        if (st.spawnT <= 0 && st.spawnQ.length && st.enemies.length < MAX_ACTIVE_ENEMIES) {
           const def = st.spawnQ.shift()!;
           spawnEnemy(root, st, def);
           st.spawnT = st.spawnGap;
@@ -549,7 +555,11 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       if (en.poison > 0) {
         en.poison -= dt;
         en.hp -= en.poisonDps * dt;
-        if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
+        // A CanvasTexture upload per poisoned enemy per frame is disproportionately
+        // expensive on mobile GPUs. Damage still ticks at 60fps; only its tiny UI
+        // representation is sampled at 8fps.
+        en.hpDrawT -= dt;
+        if (en.hpBar && en.hpDrawT <= 0) { drawHpBar(en.hpBar, en.hp / en.maxHp); en.hpDrawT = 0.125; }
         en.poisonT -= dt;
         if (en.poisonT <= 0) { splash(fx, en.x, 0.55, en.z, 0x9be83a); en.poisonT = 0.32; }
         if (en.hp <= 0) { killEnemy(st, en, root); continue; }
@@ -576,7 +586,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       }
       if (en.hpBar) en.hpBar.position.set(en.x, 1.5 * en.def.scale * ENEMY_SCALE + 0.9, en.z);
       // foot dust kicked up as they shamble (bipeds only; ghosts float)
-      if (en.def.legs && en.hitStop <= 0) { en.dustT -= dt; if (en.dustT <= 0) { footDust(fx, en.x, en.z); en.dustT = 0.2; } }
+      if (en.def.legs && en.hitStop <= 0) { en.dustT -= dt; if (en.dustT <= 0) { footDust(fx, en.x, en.z); en.dustT = 0.34; } }
       // reached the crypt
       if (en.dist >= PATH_TOTAL) {
         en.reached = true; en.dead = true;
@@ -1263,7 +1273,7 @@ function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
     hp: hpScaled, maxHp: hpScaled, spd: def.spd * speedK, phase: Math.random() * 6,
     dead: false, reached: false, slow: 0, poison: 0, poisonDps: 0, poisonT: 0, hpBar,
     dying: 0, vy: 0, spin: 0, dustT: Math.random() * 0.3,
-    hitFlash: 0, hitStop: 0, flashOn: false,
+    hitFlash: 0, hitStop: 0, flashOn: false, hpDrawT: 0,
   };
   st.enemies.push(en);
 }
@@ -1380,6 +1390,9 @@ function lightningBolt(fx: THREE.Group, ax: number, ay: number, az: number, bx: 
 
 interface Particle { m: THREE.Mesh; vx: number; vy: number; vz: number; life: number; life0: number; grav: number; grow: number; o0: number; }
 const PARTICLES: Particle[] = [];
+function particleBudget(requested: number) {
+  return Math.max(0, Math.min(requested, MAX_PARTICLES - PARTICLES.length));
+}
 // enemy flinch on hit — staggers ONLY if the hit is big relative to the enemy's
 // max HP (a poise threshold). So bosses / heavy undead shrug off chip damage and
 // keep marching (their big HP pool actually matters); only a hefty hit (e.g. an
@@ -1411,7 +1424,9 @@ function splashHit(st: any, root: THREE.Group, x: number, z: number, radius: num
 // Block-Party-style death burst — MATTE physical chunks (no glow, so it reads as
 // shattering bone/gore, clearly different from the glowing weapon fx)
 function deathBurst(fx: THREE.Group, x: number, z: number) {
-  for (let i = 0; i < 18; i++) {
+  // Keep the first few chunks so each kill still reads clearly, but never let
+  // simultaneous deaths turn into hundreds of transparent meshes.
+  for (let i = 0, n = particleBudget(12); i < n; i++) {
     const k = Math.random();
     const col = k < 0.4 ? 0xe6e1cd : k < 0.7 ? 0x6b6256 : 0x46402f; // bone / grey rot / dark earth
     const r = 0.055 + Math.random() * 0.06;
@@ -1423,7 +1438,7 @@ function deathBurst(fx: THREE.Group, x: number, z: number) {
 }
 // small grey foot-dust puffs (kicked up as characters walk) — like the store
 function footDust(fx: THREE.Group, x: number, z: number) {
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0, n = particleBudget(1); i < n; i++) {
     const r = 0.1 + Math.random() * 0.06;
     const m = ball(r, 0xcabfa6, x + (Math.random() - 0.5) * 0.26, 0.07, z + (Math.random() - 0.5) * 0.26); // pale dust, pops on the dark ground
     const mm = m.material as THREE.MeshStandardMaterial;
@@ -1446,7 +1461,7 @@ function popIn(g: THREE.Object3D) {
   requestAnimationFrame(step);
 }
 function splash(fx: THREE.Group, x: number, y: number, z: number, color = 0x8fe6b8) {
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0, n = particleBudget(3); i < n; i++) {
     const m = ball(0.06, color, x, y, z);
     (m.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(color);
     m.castShadow = false;
@@ -1655,7 +1670,9 @@ function Lights() {
   const keyRef = useRef<THREE.DirectionalLight>(null);
   useEffect(() => {
     const k = keyRef.current; if (!k) return;
-    k.shadow.mapSize.set(2048, 2048);
+    // This board is viewed from one fixed, fairly distant camera. A 1024 map is
+    // visually indistinguishable here but costs one quarter of the shadow work.
+    k.shadow.mapSize.set(1024, 1024);
     k.shadow.camera.near = 1; k.shadow.camera.far = 60;
     k.shadow.camera.left = -10; k.shadow.camera.right = 10;
     k.shadow.camera.top = 12; k.shadow.camera.bottom = -12;
@@ -1686,11 +1703,16 @@ function Lights() {
 export default function Scene(props: Props) {
   return (
     <Canvas
-      shadows={{ type: THREE.PCFSoftShadowMap }}
+      shadows={{ type: THREE.PCFShadowMap }}
       orthographic
-      dpr={[1, 2]}
+      // 2x DPR makes the full scene, shadow map and post-processing render at
+      // four times the pixels on retina phones. Cap at 1.5 while retaining a
+      // crisp UI (which is regular DOM, not part of this canvas).
+      dpr={[1, 1.5]}
       gl={{
-        antialias: true,
+        // Bloom already softens high-contrast edges; multisampling duplicates
+        // the expensive 3D pass without a meaningful improvement at this scale.
+        antialias: false,
         powerPreference: 'high-performance',
         toneMapping: THREE.ACESFilmicToneMapping,
         toneMappingExposure: 1.0,
