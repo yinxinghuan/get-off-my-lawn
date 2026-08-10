@@ -13,8 +13,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   callAigramAPI,
   postAigramAPI,
-  isInAigram,
-  telegramId,
+  isInAigramNow,
+  getTelegramId,
   type AigramResponse,
 } from '../runtime/bridge';
 import { getGameUuid } from '../runtime/game-id';
@@ -47,7 +47,7 @@ export function useGameSave<T>(gameId: string): UseGameSave<T> {
   const [savedData, setSavedData] = useState<T | null | undefined>(undefined);
   const lsKey = `${gameId}-save`;
   const sessionId = getGameUuid();
-  const canSync = isInAigram && !!sessionId && !!telegramId;
+  const canSync = isInAigramNow() && !!sessionId && !!getTelegramId()!;
   const cloudTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingDataRef = useRef<T | null>(null);
 
@@ -55,14 +55,14 @@ export function useGameSave<T>(gameId: string): UseGameSave<T> {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (canSync && sessionId && telegramId) {
+      if (canSync && sessionId && getTelegramId()!) {
         try {
           const res = await callAigramAPI<AigramResponse<SaveRow[]>>(
             `/note/aigram/ai/game/get/data/list?session_id=${encodeURIComponent(sessionId)}`,
             'GET',
           );
           const rows: SaveRow[] = Array.isArray(res?.data) ? res.data : [];
-          const mine = rows.find(r => r.user_id === telegramId);
+          const mine = rows.find(r => r.user_id === getTelegramId()!);
           if (mine && mine.resource_data) {
             try {
               const save = JSON.parse(mine.resource_data) as T;
@@ -102,7 +102,7 @@ export function useGameSave<T>(gameId: string): UseGameSave<T> {
       session_id: sessionId,
       resource_data: JSON.stringify(payload),
     });
-  }, [canSync, sessionId]);
+  }, [sessionId]);
 
   const persist = useCallback(
     (data: T) => {
@@ -112,7 +112,7 @@ export function useGameSave<T>(gameId: string): UseGameSave<T> {
       } catch {
         /* quota / private mode */
       }
-      if (canSync) {
+      if (isInAigramNow()) {
         pendingDataRef.current = withTs;
         if (cloudTimerRef.current) clearTimeout(cloudTimerRef.current);
         cloudTimerRef.current = setTimeout(flushCloud, 1000);
@@ -142,7 +142,7 @@ export function useGameSave<T>(gameId: string): UseGameSave<T> {
     } catch {
       /* ignore */
     }
-    if (canSync && sessionId) {
+    if (isInAigramNow() && sessionId) {
       // No DELETE in the new API — write an empty payload. Consumers should
       // treat an empty resource_data as no-save (see the load path above).
       postAigramAPI('/note/aigram/ai/game/save/data', {

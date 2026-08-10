@@ -3,7 +3,7 @@ import Scene, { type HudState } from './Scene';
 import { TOWER_TYPES } from './Scene';
 import { Leaderboard, useGameScore } from '@shared/leaderboard';
 import type { LeaderboardEntry } from '@shared/leaderboard';
-import { useGameEvent, telegramId, openAigramProfile } from '@shared/runtime';
+import { useGameEvent, getTelegramId, openAigramProfile, isInAigramNow } from '@shared/runtime';
 import { unlockAudio, setMuted, isMuted } from './audio';
 import { Candle, Skull, Sound, Tomb, Finger, Flame, Frost, Burst, Crown, Bolt, Venom, Lock } from './icons';
 import { t } from './i18n';
@@ -45,25 +45,25 @@ export function Lawn() {
 
   // champion pill — refresh the current #1 on the start + game-over screens
   useEffect(() => {
-    if (!isInAigram || phase === 'playing') return;
+    if (!isInAigramNow() || phase === 'playing') return;
     fetchLeaderboard().then((rows) => setChamp(rows[0] || null)).catch(() => {});
   }, [phase, isInAigram, fetchLeaderboard]);
 
   // snapshot my standing on the board when a run starts
   useEffect(() => {
-    if (phase !== 'playing' || !isInAigram || !telegramId) return;
+    if (phase !== 'playing' || !isInAigram || !getTelegramId()!) return;
     fetchLeaderboard().then((rows) => {
-      const me = rows.find((r) => String(r.user_id) === String(telegramId));
+      const me = rows.find((r) => String(r.user_id) === String(getTelegramId()!));
       preRunBest.current = me ? Number(me.score) || 0 : 0;
     }).catch(() => {});
   }, [phase, isInAigram, fetchLeaderboard]);
 
   // after a run, ping the nearest rival I just overtook (score_beat rivalry loop)
   const sendBeatNotify = useCallback(async (myScore: number) => {
-    if (!isInAigram || !telegramId || myScore <= preRunBest.current) return;
+    if (!isInAigram || !getTelegramId()! || myScore <= preRunBest.current) return;
     try {
       const fresh = await fetchLeaderboard();
-      const meId = String(telegramId);
+      const meId = String(getTelegramId()!);
       const beaten = fresh
         .filter((r) => String(r.user_id) !== meId)
         .map((r) => ({ id: String(r.user_id), score: Number(r.score) || 0 }))

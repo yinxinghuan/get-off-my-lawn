@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import {
   callAigramAPI,
-  isInAigram,
+  isInAigramNow,
   type AigramResponse,
 } from '../runtime/bridge';
 import { getGameUuid } from '../runtime/game-id';
@@ -77,7 +77,7 @@ export function useGuestbook<S extends WithMessages>(
     }
     let cancelled = false;
     const sessionId = getGameUuid();
-    if (!isInAigram || !sessionId) {
+    if (!isInAigramNow() || !sessionId) {
       setLoaded(true);
       return;
     }

@@ -43,6 +43,8 @@ declare module '@shared/leaderboard' {
 }
 
 declare module '@shared/runtime' {
+  export function isInAigramNow(): boolean
+  export function getTelegramId(): string | null
   export const telegramId: string | null;
   export const isInAigram: boolean;
   export interface UseGameEvent {
