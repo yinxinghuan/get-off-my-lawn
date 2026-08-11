@@ -2,7 +2,7 @@
 type Lang = 'en' | 'zh';
 
 function detect(): Lang {
-  const o = localStorage.getItem('game_locale');
+  const o = alteruLocalStorage.getItem('game_locale');
   if (o === 'en' || o === 'zh') return o;
   return navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
 }

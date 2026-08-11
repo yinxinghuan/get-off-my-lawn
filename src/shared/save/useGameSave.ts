@@ -26,7 +26,7 @@ interface SaveRow {
 }
 
 export interface UseGameSave<T> {
-  /** Initial save loaded from cloud / localStorage. `undefined` while loading, `null` if no save exists. */
+  /** Initial save loaded from cloud / alteruLocalStorage. `undefined` while loading, `null` if no save exists. */
   savedData: T | null | undefined;
   /** True once the initial probe completed (regardless of whether a save was found). */
   loaded: boolean;
@@ -34,7 +34,7 @@ export interface UseGameSave<T> {
   hasSave: boolean;
   /** Persist save data. Synchronously to localStorage; cloud write debounced (1s) and fire-and-forget. */
   persist: (data: T) => void;
-  /** Erase save from cloud + localStorage. */
+  /** Erase save from cloud + alteruLocalStorage. */
   clear: () => Promise<void>;
 }
 
@@ -77,7 +77,7 @@ export function useGameSave<T>(gameId: string): UseGameSave<T> {
         }
       }
       try {
-        const raw = localStorage.getItem(lsKey);
+        const raw = alteruLocalStorage.getItem(lsKey);
         if (raw) {
           const save = JSON.parse(raw) as T;
           if (!cancelled) setSavedData(save);
@@ -108,7 +108,7 @@ export function useGameSave<T>(gameId: string): UseGameSave<T> {
     (data: T) => {
       const withTs = { ...(data as object), _lastActive: Date.now() } as T;
       try {
-        localStorage.setItem(lsKey, JSON.stringify(withTs));
+        alteruLocalStorage.setItem(lsKey, JSON.stringify(withTs));
       } catch {
         /* quota / private mode */
       }
@@ -138,7 +138,7 @@ export function useGameSave<T>(gameId: string): UseGameSave<T> {
     }
     pendingDataRef.current = null;
     try {
-      localStorage.removeItem(lsKey);
+      alteruLocalStorage.removeItem(lsKey);
     } catch {
       /* ignore */
     }

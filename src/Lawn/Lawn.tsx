@@ -24,7 +24,7 @@ export function Lawn() {
   const [bossBanner, setBossBanner] = useState(false);
   const submittedBest = useRef(0);
   const lastSubmitT = useRef(0);
-  const [best, setBest] = useState<number>(() => Number(localStorage.getItem(BEST_KEY) || 0));
+  const [best, setBest] = useState<number>(() => Number(alteruLocalStorage.getItem(BEST_KEY) || 0));
   const [showBoard, setShowBoard] = useState(false);
   const [muted, setMutedState] = useState(isMuted());
   const [upgradeHint, setUpgradeHint] = useState(false);
@@ -110,7 +110,7 @@ export function Lawn() {
     finalScore.current = score;
     newBest.current = false;
     setBest((b) => {
-      if (score > b) { newBest.current = true; localStorage.setItem(BEST_KEY, String(score)); return score; }
+      if (score > b) { newBest.current = true; alteruLocalStorage.setItem(BEST_KEY, String(score)); return score; }
       return b;
     });
     submitScore(score).catch(() => {});
