@@ -1,6 +1,8 @@
 import { type CSSProperties, useEffect, useState } from 'react';
 import { isInAigramNow, openAigramProfile } from '../runtime/bridge';
+import { isCrazyGamesBuild } from '../runtime/deployTarget';
 import type { LeaderboardEntry } from './useGameScore';
+import AlterULeaderboardPrompt from './AlterULeaderboardPrompt';
 import './Leaderboard.less';
 
 // ─── Built-in i18n (no dependency on game's i18n) ────────────────────────
@@ -10,15 +12,13 @@ const STRINGS = {
     title: '排行榜',
     me: '我',
     empty: '暂无记录，快来第一个上榜！',
-    openInAlterU: '在 AlterU 中打开即可查看排行榜',
-    downloadAlterU: '下载 AlterU',
+    guestScore: '最高分保存在本机，无需登录即可游玩。',
   },
   en: {
     title: 'Leaderboard',
     me: 'me',
     empty: 'No records yet. Be the first!',
-    openInAlterU: 'Open in AlterU to view the leaderboard.',
-    downloadAlterU: 'Get AlterU on the App Store',
+    guestScore: 'Your best score stays on this device. No account is required to play.',
   },
 } as const;
 
@@ -56,7 +56,6 @@ interface Props {
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 const MEDAL_COLORS = ['#FFD700', '#C0C0C0', '#CD7F32'];
-const ALTERU_APP_URL = 'https://apps.apple.com/app/id6769646546';
 
 // ─── Component ────────────────────────────────────────────────────────────
 
@@ -100,18 +99,14 @@ export default function Leaderboard({ gameName,  onClose, fetch }: Props) {
           )}
 
           {!loading && !isInAigramNow() && (
-            <div className="lb-state lb-state--download">
-              <span className="lb-state__icon">🏆</span>
-              <span className="lb-state__text">{s.openInAlterU}</span>
-              <a
-                className="lb-state__download"
-                href={ALTERU_APP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {s.downloadAlterU}
-              </a>
-            </div>
+            isCrazyGamesBuild ? (
+              <div className="lb-state">
+                <span className="lb-state__icon">🏆</span>
+                <span className="lb-state__text">{s.guestScore}</span>
+              </div>
+            ) : (
+              <AlterULeaderboardPrompt />
+            )
           )}
 
           {!loading && isInAigramNow() && entries.length === 0 && (

@@ -3,7 +3,7 @@ import Scene, { type HudState } from './Scene';
 import { TOWER_TYPES } from './Scene';
 import { Leaderboard, useGameScore } from '@shared/leaderboard';
 import type { LeaderboardEntry } from '@shared/leaderboard';
-import { useGameEvent, getTelegramId, openAigramProfile, isInAigramNow } from '@shared/runtime';
+import { useGameEvent, getTelegramId, openAigramProfile, isInAigramNow, isCrazyGamesBuild } from '@shared/runtime';
 import { unlockAudio, setMuted, isMuted } from './audio';
 import { Candle, Skull, Sound, Tomb, Finger, Flame, Frost, Burst, Crown, Bolt, Venom, Lock } from './icons';
 import { t } from './i18n';
@@ -284,7 +284,7 @@ export function Lawn() {
             {newBest.current && <div className="gol-newbest">{t('newBest')}</div>}
             <div className="gol-btns">
               <button className="gol-btn gol-btn--primary" onPointerDown={again}>{t('again')}</button>
-              {isInAigram && (
+              {(isInAigram || isCrazyGamesBuild) && (
                 <button className="gol-btn gol-btn--ghost" onPointerDown={() => setShowBoard(true)}>
                   <Tomb /> {t('leaderboard')}
                 </button>

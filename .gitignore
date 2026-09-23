@@ -1,5 +1,7 @@
 node_modules
 dist
+dist-crazygames
+artifacts/
 .DS_Store
 *.log
 .env

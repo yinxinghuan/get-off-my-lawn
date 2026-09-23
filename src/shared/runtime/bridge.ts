@@ -1,3 +1,5 @@
+import { isCrazyGamesBuild } from './deployTarget';
+
 // Aigram runtime bridge — the only file in this workspace that knows how the
 // game iframe talks to the Aigram host.
 //
@@ -15,7 +17,8 @@ const _params =
     ? new URLSearchParams(window.location.search)
     : new URLSearchParams();
 
-const _rawOrigin = _params.get('api_origin');
+// Crazy Games query params are not an Aigram session, so this build never reads them.
+const _rawOrigin = isCrazyGamesBuild ? null : _params.get('api_origin');
 
 /** Aigram host origin (URL-decoded). Null when running outside Aigram. */
 export const api_origin: string | null = _rawOrigin
@@ -23,18 +26,27 @@ export const api_origin: string | null = _rawOrigin
   : null;
 
 /** Current player's telegram_id, supplied by Aigram on iframe launch. */
-export const telegramId: string | null = _params.get('telegram_id');
+export const telegramId: string | null = isCrazyGamesBuild
+  ? null
+  : _params.get('telegram_id');
 
-/** True when both `api_origin` and `telegram_id` are present. */
-export const isInAigram: boolean = !!api_origin && !!telegramId;
+/**
+ * True when both `api_origin` and `telegram_id` are present.
+ * The Crazy Games build never enables the Aigram host, so guests are not
+ * sent through an AlterU login or save gate.
+ */
+export const isInAigram: boolean =
+  !isCrazyGamesBuild && !!api_origin && !!telegramId;
 
 /** Read shell-owned identity state at action time; guest-shell may update it after sign-in. */
 export function isInAigramNow(): boolean {
+  if (isCrazyGamesBuild) return false;
   return Boolean((window as any).Aigram?.isInAigram);
 }
 
 /** Read the current shell-owned player id, falling back to the launch query. */
 export function getTelegramId(): string | null {
+  if (isCrazyGamesBuild) return null;
   const current = (window as any).Aigram?.telegramId;
   return current == null || current === '' ? telegramId : String(current);
 }
