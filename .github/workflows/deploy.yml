@@ -22,6 +22,10 @@ jobs:
         with: { node-version: 20, cache: npm }
       - run: npm ci || npm install
       - run: npm run build
+      # Guest build sits beside the root site. Relative ./assets keep working
+      # at /get-off-my-lawn/crazygames/ and do not replace dist/index.html.
+      - run: npm run build:crazygames
+      - run: rm -rf dist/crazygames && mkdir -p dist/crazygames && cp -a dist-crazygames/. dist/crazygames/
       - uses: actions/upload-pages-artifact@v3
         with: { path: dist }
       - id: deployment

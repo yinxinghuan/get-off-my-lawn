@@ -19,6 +19,8 @@ export {
 } from './bridge';
 export type { AigramResponse } from './bridge';
 
+export { isCrazyGamesBuild } from './deployTarget';
+
 // Game UUID resolution
 export { setGameUuid, getGameUuid } from './game-id';
 

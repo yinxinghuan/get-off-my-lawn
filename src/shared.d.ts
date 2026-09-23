@@ -47,6 +47,7 @@ declare module '@shared/runtime' {
   export function getTelegramId(): string | null
   export const telegramId: string | null;
   export const isInAigram: boolean;
+  export const isCrazyGamesBuild: boolean;
   export interface UseGameEvent {
     trigger: (event: string, configJson?: object | string) => void;
     canEmit: boolean;

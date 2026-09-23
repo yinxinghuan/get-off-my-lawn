@@ -12,6 +12,7 @@ import {
   openAigramPost,
   type AigramResponse,
 } from '../runtime/bridge';
+import { isCrazyGamesBuild } from '../runtime/deployTarget';
 import { getGameUuid } from '../runtime/game-id';
 
 // ─── Public shapes ────────────────────────────────────────────────────────
@@ -75,6 +76,8 @@ export function useGameScore() {
 
   const submitScore = useCallback(
     async (score: number) => {
+      // Guests keep the best score in localStorage. Do not post it to Aigram.
+      if (isCrazyGamesBuild) return;
       if (!sessionId || score <= 0) return;
       try {
         await callAigramAPI<AigramResponse<null>>(
@@ -90,7 +93,7 @@ export function useGameScore() {
   );
 
   const fetchLeaderboard = useCallback(async (): Promise<LeaderboardEntry[]> => {
-    if (!sessionId) return [];
+    if (isCrazyGamesBuild || !sessionId) return [];
     try {
       const res = await callAigramAPI<AigramResponse<RankRow[]>>(
         `/note/aigram/ai/game/rank/score/list/by/session_id?session_id=${encodeURIComponent(sessionId)}`,
