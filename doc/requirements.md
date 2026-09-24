@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-Get Off My Lawn 是一个 `action` 类型的移动端小游戏：Get Off My Grave — one-tap tower defense in a foggy graveyard. Tap a plot to light a spectral brazier, tap again to stoke it. Banish the zombies, ghosts and freshly dead clawing toward your crypt.
+Get Off My Grave 是一个 `action` 类型的移动端小游戏：one-tap tower defense in a foggy graveyard. Tap a plot to light a spectral brazier, tap again to stoke it. Banish the zombies, ghosts and freshly dead clawing toward your crypt. 仓库与 Pages 路径仍为 get-off-my-lawn。
 
 ## 2. Visual Design
 

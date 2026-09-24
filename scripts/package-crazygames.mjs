@@ -22,6 +22,7 @@ const banned = [
   '下载 AlterU',
   'Open in AlterU',
   '在 AlterU 中打开',
+  'Get Off My Lawn',
 ];
 
 function walk(dir) {
@@ -32,6 +33,20 @@ function walk(dir) {
     else out.push(file);
   }
   return out;
+}
+
+const indexHtml = readFileSync(path.join(dist, 'index.html'), 'utf8');
+const title = indexHtml.match(/<title>([^<]*)<\/title>/i);
+if (!title || title[1].trim() !== 'Get Off My Grave') {
+  console.error(`Crazy Games <title> must be "Get Off My Grave", got ${JSON.stringify(title && title[1])}`);
+  process.exit(1);
+}
+for (const name of ['application-name', 'apple-mobile-web-app-title']) {
+  const meta = indexHtml.match(new RegExp(`<meta\\s+name=["']${name}["']\\s+content=["']([^"']*)["']`, 'i'));
+  if (!meta || meta[1] !== 'Get Off My Grave') {
+    console.error(`Crazy Games meta ${name} must be "Get Off My Grave"`);
+    process.exit(1);
+  }
 }
 
 for (const file of walk(dist)) {
