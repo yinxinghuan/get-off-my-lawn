@@ -2,16 +2,38 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
-/** Crazy Games rejects the AlterU guest-shell login wall. Drop it from that build only. */
-function stripAlteruGuestShell(): Plugin {
+const BRAND_HOST_SCRUB = `<script>
+(function () {
+  var ids = ['alteru-guest-banner', 'alteru-guest-login', 'alteru-guest-coupon', 'alteru-guest-coupon-claim'];
+  function strip() {
+    for (var i = 0; i < ids.length; i++) {
+      var el = document.getElementById(ids[i]);
+      if (el) el.remove();
+    }
+  }
+  strip();
+  var obs = new MutationObserver(strip);
+  obs.observe(document.documentElement, { childList: true, subtree: true });
+  setTimeout(function () { obs.disconnect(); }, 12000);
+})();
+</script>`;
+
+/** Crazy Games rejects external login walls and brand chrome. Guest build only. */
+function crazyGamesGuestHtml(): Plugin {
   return {
-    name: 'strip-alteru-guest-shell',
+    name: 'crazygames-guest-html',
     apply: 'build',
     transformIndexHtml(html) {
-      return html.replace(
-        /\s*<script\b[^>]*\bsrc=["']https:\/\/images\.aiwaves\.tech\/alteru\/guest-shell\.js["'][^>]*>\s*<\/script>/gi,
-        '',
-      );
+      let out = html
+        .replace(
+          /\s*<script\b[^>]*\bsrc=["'][^"']*(?:images\.aiwaves\.tech\/alteru|alteru\.app)[^"']*["'][^>]*>\s*<\/script>/gi,
+          '',
+        )
+        .replace(/<title>[^<]*<\/title>/i, '<title>Get Off My Grave</title>');
+      if (!out.includes('alteru-guest-banner')) {
+        out = out.replace('<div id="root">', `${BRAND_HOST_SCRUB}\n    <div id="root">`);
+      }
+      return out;
     },
   };
 }
@@ -28,7 +50,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
-    ...(mode === 'crazygames' ? [stripAlteruGuestShell()] : []),
+    ...(mode === 'crazygames' ? [crazyGamesGuestHtml()] : []),
   ],
   css: {
     preprocessorOptions: {

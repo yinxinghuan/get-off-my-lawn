@@ -1,6 +1,6 @@
 # Crazy Games build
 
-Get Off My Grave ships two static builds:
+Get Off My Grave ships two static builds. That is the name players and the Crazy Games portal see (HTML `<title>`, `application-name`, in-game wordmark). Chinese copy stays 滚出我的墓地. The repository and Pages path stay `get-off-my-lawn`.
 
 | | GitHub Pages / other hosts | Crazy Games |
 | --- | --- | --- |
@@ -15,7 +15,8 @@ Get Off My Grave ships two static builds:
 Crazy Games requires that guests can play and that the game does not add its own login (including AlterU / Aigram) before play. This build:
 
 - Starts on the attract screen. Tap to defend. There is no account screen.
-- Strips `https://images.aiwaves.tech/alteru/guest-shell.js` from `index.html`. The default build still loads it.
+- Strips AlterU guest-shell scripts (`images.aiwaves.tech/alteru` and `alteru.app`) from `index.html`. The default build still loads the guest shell.
+- Removes `#alteru-guest-banner`, login, and coupon hosts if one is injected, so no AlterU or Aigram mark is visible.
 - Saves the best score in `localStorage` on the device (via the existing scoped storage adapter).
 - Opens the leaderboard as a local note (“best score stays on this device”) instead of “Open in AlterU” / the App Store.
 - Does not treat Crazy Games query parameters as an Aigram session.

@@ -6,7 +6,7 @@ import type { LeaderboardEntry } from '@shared/leaderboard';
 import { useGameEvent, getTelegramId, openAigramProfile, isInAigramNow, isCrazyGamesBuild } from '@shared/runtime';
 import { unlockAudio, setMuted, isMuted } from './audio';
 import { Candle, Skull, Sound, Tomb, Finger, Flame, Frost, Burst, Crown, Bolt, Venom, Lock } from './icons';
-import { t } from './i18n';
+import { getLang, t } from './i18n';
 import './Lawn.less';
 
 const POSTER_URL = 'https://yinxinghuan.github.io/games/posters/get-off-my-lawn.png';
@@ -256,10 +256,19 @@ export function Lawn() {
       {phase === 'attract' && (
         <>
           <div className="gol-tapcatch" onPointerDown={startGame} />
-          <div className="gol-logo"><span className="wm">Get Off<br />My Grave</span></div>
+          <div className="gol-logo">
+            <span className={`wm${getLang() === 'zh' ? ' wm--zh' : ''}`}>
+              {getLang() === 'zh' ? t('title') : <>Get Off<br />My Grave</>}
+            </span>
+          </div>
           {champPill('gol-champ--attract')}
           <div className="gol-startguide">
-            <div className="gol-finger"><Finger /></div>
+            <div className="gol-tapcue" aria-hidden>
+              <span className="gol-tapcue-pad" />
+              <span className="gol-tapcue-ring" />
+              <span className="gol-tapcue-ring gol-tapcue-ring--late" />
+              <div className="gol-finger"><Finger /></div>
+            </div>
             <div className="gol-start-cta">{t('tapToStart')}</div>
           </div>
         </>

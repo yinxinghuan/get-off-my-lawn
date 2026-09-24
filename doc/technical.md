@@ -2,13 +2,13 @@
 
 ## 1. 技术栈
 
-- 游戏：Get Off My Lawn
+- 游戏：Get Off My Grave（仓库与 Pages 路径仍为 get-off-my-lawn）
 - 类型：action
 - 简述：Get Off My Grave — one-tap tower defense in a foggy graveyard. Tap a plot to light a spectral brazier, tap again to stoke it. Banish the zombies, ghosts and freshly dead clawing toward your crypt.
 - 框架 / 语言 / 构建：React, TypeScript, Vite, Three.js, Less
 - 渲染方式：Canvas/WebGL
 - 依赖摘录：@react-three/drei@^9.114.0, @react-three/fiber@^8.17.10, @react-three/postprocessing@^2.16.3, @types/node@^25.8.0, @types/react@^18.3.12, @types/react-dom@^18.3.1, @types/three@^0.169.0, @vitejs/plugin-react@^4.3.3, less@^4.2.0, postprocessing@^6.36.4, react@^18.3.1, react-dom@^18.3.1, three@^0.169.0, typescript@^5.6.3, vite@^5.4.10
-- 平台元信息：meta.title=Get Off My Lawn；cover_url=/poster.png；category=action；uuid=a467b652-de76-4cb2-8d3b-5e197289204c
+- 平台元信息：meta.title=Get Off My Grave；cover_url=/poster.png；category=action；uuid=a467b652-de76-4cb2-8d3b-5e197289204c
 
 ## 2. 目录结构
 
