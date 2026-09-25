@@ -99,6 +99,7 @@ const STR = {
   boneTitan:  { en: 'Bone Titan', zh: '骨巨灵' },
   direWolf:   { en: 'Dire Wolf', zh: '恐狼' },
   speedLabel: { en: 'Speed', zh: '倍速' },
+  volume:    { en: 'Volume', zh: '音量' },
   tutorPlace: { en: 'Click a weapon, then click a glowing socket', zh: '先点武器，再点发光的台座' },
   tutorPlaceTap: { en: 'Tap a weapon, then tap a glowing socket', zh: '先点武器，再点发光的台座' },
   tutorKeys: { en: 'Keys 1–5', zh: '按键 1–5' },

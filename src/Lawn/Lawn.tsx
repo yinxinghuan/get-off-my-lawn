@@ -6,7 +6,7 @@ import Scene, {
 import { Leaderboard, useGameScore } from '@shared/leaderboard';
 import type { LeaderboardEntry } from '@shared/leaderboard';
 import { useGameEvent, getTelegramId, isInAigramNow, isCrazyGamesBuild } from '@shared/runtime';
-import { unlockAudio, setMuted, isMuted, setMusic } from './audio';
+import { unlockAudio, setMuted, isMuted, setMusic, playClear, setVolume, getVolume } from './audio';
 import { Candle, Skull, Sound, Tomb, Finger, Flame, Frost, Burst, Crown, Bolt, Venom, Lock, PerkMark, Chain, WeaponGlyph, YardStone, SoulMark, ShardMark } from './icons';
 import { getLang, t, type StrKey } from './i18n';
 import {
@@ -144,6 +144,7 @@ export function Lawn() {
   const [best, setBest] = useState<number>(() => Number(alteruLocalStorage.getItem(BEST_KEY) || 0));
   const [showBoard, setShowBoard] = useState(false);
   const [muted, setMutedState] = useState(isMuted());
+  const [volume, setVolumeState] = useState(() => getVolume());
   const [upgradeHint, setUpgradeHint] = useState(false);
   const [selectedType, setSelectedType] = useState(0);
   const [champ, setChamp] = useState<LeaderboardEntry | null>(null);
@@ -220,6 +221,7 @@ export function Lawn() {
     bannerTimer.current = window.setTimeout(() => { setWaveBanner(null); setBossBanner(false); }, 2600);
   }, []);
   const onNightClear = useCallback((report: NightReport) => {
+    playClear();
     setArming(false);
     setChoice(report);
     setOffers(rollOffers(report.lives));
@@ -851,7 +853,25 @@ export function Lawn() {
         <Coach step={tutor} desk={desk} spots={spots} onSkip={skipTutor} />
       )}
 
-      <button className="gol-mute" onPointerDown={toggleMute}><Sound on={!muted} /></button>
+      {guest && (
+        <input
+          className="gol-vol"
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={volume}
+          aria-label={t('volume')}
+          title={t('volume')}
+          onPointerDown={(e) => { e.stopPropagation(); unlockAudio(); }}
+          onInput={(e) => {
+            const v = Number((e.target as HTMLInputElement).value);
+            setVolume(v);
+            setVolumeState(v);
+          }}
+        />
+      )}
+      <button className="gol-mute" onPointerDown={toggleMute}><Sound on={!muted && volume > 0} /></button>
 
       {showBoard && (
         <Leaderboard

@@ -18,6 +18,23 @@ const BRAND_HOST_SCRUB = `<script>
 })();
 </script>`;
 
+/** Guest build plays recorded beds; the host keeps the procedural module. */
+function crazyGamesAudio(): Plugin {
+  const recorded = path.resolve(__dirname, 'src/Lawn/audio-cg.ts');
+  return {
+    name: 'crazygames-audio',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (!importer) return null;
+      const from = importer.replaceAll('\\', '/');
+      if (!from.includes('/src/Lawn/') || from.endsWith('/audio-cg.ts')) return null;
+      const spec = source.split('?')[0];
+      if (spec === './audio' || spec === './audio.ts') return recorded;
+      return null;
+    },
+  };
+}
+
 /** Crazy Games rejects external login walls and brand chrome. Guest build only. */
 function crazyGamesGuestHtml(): Plugin {
   return {
@@ -50,7 +67,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
-    ...(mode === 'crazygames' ? [crazyGamesGuestHtml()] : []),
+    ...(mode === 'crazygames' ? [crazyGamesAudio(), crazyGamesGuestHtml()] : []),
   ],
   css: {
     preprocessorOptions: {

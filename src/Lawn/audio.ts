@@ -1,7 +1,8 @@
-// All audio is synthesized in the browser with the Web Audio API.
-// No sampled recordings are shipped. The night bed and the boss bed are
+// AlterU host audio. Everything is synthesized in the browser with the Web Audio API.
+// No sampled recordings are shipped in this build. The night bed and the boss bed are
 // original compositions (oscillators, filtered noise, look-ahead scheduling).
 // Nothing here is a third-party recording, so no external license applies.
+// The Crazy Games guest build replaces this module (see audio-cg.ts and doc/cg-audio.md).
 // See doc/audio.md.
 //
 // The feed PRELOADS the next game (it may be mounted + running the attract demo
@@ -224,6 +225,13 @@ function scheduleAhead() {
     stepIndex = (stepIndex + 1) % pattern.length;
   }
 }
+
+/** Night-clear sting. The guest build plays a recording; the host build stays silent. */
+export function playClear() { /* host has no sampled sting */ }
+
+/** Master level. The guest build persists this; the host mix is fixed. */
+export function setVolume(v: number) { void v; }
+export function getVolume() { return 1; }
 
 /** Night bed during a defence, boss bed while a champion is on the path. */
 export function setMusic(mode: 'off' | 'night' | 'boss') {
