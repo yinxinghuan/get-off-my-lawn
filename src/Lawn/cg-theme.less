@@ -1,0 +1,803 @@
+// Crazy Games guest theme. Scoped to .gol--cg so the AlterU host is untouched.
+// Display face: Creepster (SIL OFL 1.1), CSS family GraveMark. See fonts/OFL.txt.
+
+@font-face {
+  font-family: 'GraveMark';
+  src: url('./fonts/Creepster-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+// ── design system ──────────────────────────────────────────────────────────
+@cg-display: 'GraveMark', 'Creepster', cursive;
+@cg-body: 'Archivo', 'PingFang SC', system-ui, sans-serif;
+@s1: 4px;
+@s2: 8px;
+@s3: 12px;
+@s4: 16px;
+@s5: 24px;
+@r: 12px;
+@r-sm: 8px;
+@line: 2px;
+@line-strong: 3px;
+@inkline: #140814;
+@panel: #241433;
+@panel-2: #160c24;
+@gold: #ffd15e;
+@pump: #ff8a2a;
+@mute: #a898b4;
+@ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+@dur: 160ms;
+@shadow: 0 3px 0 @inkline;
+
+.cg-panel() {
+  background: linear-gradient(180deg, @panel, @panel-2);
+  border: @line-strong solid @inkline;
+  border-radius: @r;
+  box-shadow: @shadow;
+  color: #f4efe6;
+}
+
+@keyframes gol-numpop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.14); }
+  100% { transform: scale(1); }
+}
+@keyframes gol-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes gol-fanfare-in {
+  0% { transform: scale(0.55) rotate(-6deg); opacity: 0; }
+  70% { transform: scale(1.06) rotate(1deg); opacity: 1; }
+  100% { transform: scale(1) rotate(-1deg); opacity: 1; }
+}
+@keyframes gol-spark {
+  0% { transform: translate(0, 8px) scale(0.25); opacity: 0; }
+  16% { opacity: 1; }
+  100% { transform: translate(var(--dx), calc(var(--dy) + 42px)) scale(var(--s, 1)); opacity: 0; }
+}
+@keyframes gol-loot {
+  0% { transform: translateY(16px) scale(0.96); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+@keyframes gol-cg-banner {
+  0% { transform: translateY(-8px); opacity: 0; }
+  14% { transform: translateY(0); opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateY(-6px); opacity: 0; }
+}
+@keyframes gol-cg-pop {
+  from { transform: translateY(6px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes gol-stone-glow {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.85; }
+}
+
+.gol.gol--cg {
+  .gol-numpop { display: inline-block; animation: gol-numpop @dur @ease; }
+
+  .gol-logo .wm,
+  .gol-fanfare-title,
+  .gol-wavebanner,
+  .gol-start-cta,
+  .gol-overttl,
+  .gol-score-n {
+    font-family: @cg-display;
+  }
+  // Archivo has real tabular figures. Creepster does not, and it blurs under 24px.
+  .gol-souls-n,
+  .gol-shards-n,
+  .gol-card-cost,
+  .gol-stat .v,
+  .gol-coming-boss b,
+  .gol-choice-stats b {
+    font-family: @cg-body;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+    letter-spacing: 0;
+  }
+
+  .gol-score-k,
+  .gol-souls-k,
+  .gol-shards-k,
+  .gol-coming-k,
+  .gol-choice-h,
+  .gol-next-k,
+  .gol-plate-u,
+  .gol-deskkeys {
+    font-family: @cg-body;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: @mute;
+  }
+  .gol-card-name,
+  .gol-plate b,
+  .gol-offer b {
+    font-family: @cg-body;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    color: #f7f1e6;
+  }
+  .gol-coming-line,
+  .gol-offer > span:not(.gol-offer-key),
+  .gol-plate span,
+  .gol-guide-txt span {
+    font-family: @cg-body;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 1.3;
+    color: #efe6f2;
+  }
+
+  .gol-logo .wm {
+    filter: drop-shadow(3px 4px 0 @inkline) drop-shadow(0 0 12px rgba(255, 209, 94, 0.45));
+  }
+
+  .gol-souls,
+  .gol-plate,
+  .gol-card,
+  .gol-speed,
+  .gol-mute,
+  .gol-arm,
+  .gol-hint,
+  .gol-guide,
+  .gol-unlock {
+    .cg-panel();
+  }
+
+  .gol-score-n,
+  .gol-souls-n,
+  .gol-shards-n,
+  .gol-card-cost,
+  .gol-coming-boss b { color: @gold; }
+  .gol-souls--ready .gol-souls-n { text-shadow: 0 0 10px rgba(255, 209, 94, 0.8); }
+
+  .gol-card,
+  .gol-speed,
+  .gol-mute,
+  .gol-arm,
+  .gol-btn,
+  .gol-offer,
+  .gol-meta-btn {
+    transition: transform @dur @ease, box-shadow @dur @ease;
+  }
+  .gol-card {
+    position: relative;
+    border-radius: @r;
+    &:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 6px 0 @inkline; }
+    &:active:not(:disabled) { transform: translateY(1px) scale(0.97, 0.95); box-shadow: 0 1px 0 @inkline; }
+    &--sel {
+      box-shadow: 0 0 0 2px @gold, @shadow;
+      background: linear-gradient(180deg, #342252, @panel-2);
+    }
+    &--sel:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 0 0 2px @gold, 0 6px 0 @inkline; }
+  }
+  .gol-card--locked {
+    filter: none;
+    opacity: 1;
+    cursor: default;
+    background: #1a1024;
+    box-shadow: @shadow;
+    .gol-card-name,
+    .gol-card-ico { opacity: 0.45; }
+    .gol-card-unlock {
+      font-family: @cg-display;
+      opacity: 1;
+      color: @gold !important;
+      font-size: 16px;
+    }
+  }
+  .gol-card-chain {
+    position: absolute;
+    top: @s1;
+    right: @s1;
+    z-index: 2;
+    opacity: 0.9;
+  }
+  .gol-card-key,
+  .gol-offer-key,
+  .gol-keys kbd,
+  .gol-keystrip kbd,
+  .gol-deskkeys kbd,
+  .gol-plate-u kbd {
+    background: #1a1020;
+    border: @line solid #5a4a38;
+    color: @gold;
+    border-radius: @s1;
+    box-shadow: none;
+  }
+
+  .gol-speed:hover,
+  .gol-mute:hover,
+  .gol-arm:hover,
+  .gol-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 0 @inkline; }
+  .gol-speed:active,
+  .gol-mute:active,
+  .gol-arm:active,
+  .gol-btn:active { transform: translateY(1px) scale(0.97, 0.95); box-shadow: 0 1px 0 @inkline; }
+  .gol-speed--fast { box-shadow: 0 0 0 2px @gold, @shadow; color: @gold; }
+
+  .gol-card-ico {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    svg { width: 26px; height: 26px; }
+  }
+  .gol-card-cost {
+    display: inline-flex;
+    align-items: center;
+    gap: @s1;
+    font-size: 14px;
+    line-height: 1;
+    svg { width: 14px; height: 14px; flex: 0 0 auto; }
+  }
+
+  // One toast slot, tucked under the phone score. Desk overrides this into the sky band.
+  .gol-toasts {
+    position: absolute;
+    z-index: 8;
+    top: calc(env(safe-area-inset-top) + 116px);
+    left: @s4;
+    right: @s4;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    pointer-events: none;
+  }
+  .gol-toasts .gol-wavebanner,
+  .gol-toasts .gol-hint,
+  .gol-toasts .gol-unlock {
+    position: relative;
+    top: auto;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    transform: none;
+    max-width: min(420px, 100%);
+    white-space: normal;
+    text-align: center;
+    animation: gol-cg-pop 220ms @ease;
+  }
+  .gol-toasts .gol-wavebanner {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: @s2;
+    width: max-content;
+    max-width: min(440px, 100%);
+    margin: 0 auto;
+    padding: 8px 18px 9px;
+    font-family: @cg-body;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    line-height: 1;
+    white-space: nowrap;
+    text-transform: uppercase;
+    color: @inkline;
+    background: linear-gradient(180deg, #ffe08a, @pump 58%, #c2410c);
+    background-clip: padding-box;
+    -webkit-background-clip: padding-box;
+    -webkit-text-fill-color: @inkline;
+    border: @line-strong solid @inkline;
+    border-radius: @r-sm;
+    box-shadow: @shadow;
+    filter: none;
+    animation: gol-cg-banner 2.6s @ease forwards;
+    &::before { content: none; }
+    > span:not(.gol-lineup):not(.gol-bosswarn) {
+      font-family: @cg-body;
+      font-size: 12px;
+      line-height: 1;
+    }
+    .gol-lineup {
+      font-family: @cg-display;
+      font-size: 28px;
+      font-weight: 400;
+      letter-spacing: 0.03em;
+      line-height: 1;
+      text-transform: uppercase;
+      color: @inkline;
+      -webkit-text-fill-color: @inkline;
+      background: none;
+    }
+    .gol-bosswarn {
+      font-family: @cg-body;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      line-height: 1;
+      color: @inkline;
+      -webkit-text-fill-color: @inkline;
+      -webkit-text-stroke: 0;
+      filter: none;
+    }
+    &--boss {
+      background: linear-gradient(180deg, #ffd0d4, #ff5c6b 55%, #b8323e);
+      -webkit-text-fill-color: @inkline;
+    }
+  }
+  .gol-toasts .gol-hint,
+  .gol-toasts .gol-unlock { padding: @s2 @s4; }
+
+  .gol-choice-back {
+    animation: gol-fade 180ms @ease;
+    background: radial-gradient(ellipse at 50% 32%, rgba(90, 30, 140, 0.42), rgba(8, 2, 16, 0.78));
+  }
+  .gol-choice--fanfare {
+    .cg-panel();
+    border-width: @line-strong;
+    border-radius: 28px 28px @r @r;
+    box-shadow: 0 0 0 3px @gold, 0 8px 0 #3a1860;
+    padding: @s4;
+  }
+  .gol-fanfare { position: relative; margin: 0 0 @s2; text-align: center; }
+  .gol-fanfare-ribbon {
+    display: inline-block;
+    margin-bottom: @s1;
+    padding: 2px @s3 1px;
+    background: @pump;
+    color: @inkline;
+    font-family: @cg-body;
+    font-weight: 900;
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    border: @line-strong solid @inkline;
+    border-radius: @s1;
+    box-shadow: 2px 2px 0 @inkline;
+  }
+  .gol-fanfare-title {
+    font-size: clamp(48px, 6vw, 80px);
+    line-height: 0.84;
+    color: @gold;
+    text-shadow: 3px 4px 0 @inkline;
+    animation: gol-fanfare-in 480ms @ease both;
+  }
+  .gol-sparks {
+    position: absolute;
+    inset: -6px 0 auto;
+    height: 72px;
+    pointer-events: none;
+    i {
+      position: absolute;
+      top: 28px;
+      border-radius: 2px;
+      animation: gol-spark 1.05s cubic-bezier(0.15, 0.7, 0.3, 1) forwards;
+    }
+  }
+  .gol-choice--fanfare .gol-choice-stats {
+    gap: @s2;
+    margin: @s2 0;
+    span {
+      background: #120814;
+      border: @line solid #3a2a22;
+      border-radius: 999px;
+      padding: 2px @s3;
+      color: @mute;
+    }
+    b {
+      font-family: @cg-body;
+      font-weight: 800;
+      color: @gold;
+      font-size: 22px;
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: 'tnum' 1;
+    }
+  }
+  .gol-choice--fanfare .gol-choice-h { color: @mute; margin: @s2 0; }
+
+  .gol-offer {
+    position: relative;
+    min-height: 128px;
+    justify-content: flex-start;
+    overflow: hidden;
+    padding: @s5 @s3 @s3;
+    .cg-panel();
+    animation: gol-loot 280ms @ease both;
+    &::before {
+      content: '';
+      position: absolute;
+      left: @s3;
+      top: @s2;
+      width: @s2;
+      height: @s2;
+      border-radius: 50%;
+      background: var(--tone, @gold);
+    }
+    &:nth-child(2) { animation-delay: 60ms; }
+    &:nth-child(3) { animation-delay: 120ms; }
+    &:hover { transform: translateY(-4px); box-shadow: 0 7px 0 @inkline; }
+    &:active { transform: translateY(1px) scale(0.98); box-shadow: 0 1px 0 @inkline; }
+  }
+  .gol-offer--common { --tone: #9a8cb0; }
+  .gol-offer--rare { --tone: #7ee7ff; }
+  .gol-offer--epic { --tone: @gold; }
+  .gol-offer--gold { --tone: @pump; }
+  .gol-offer-key {
+    position: absolute;
+    top: @s2;
+    right: @s2;
+    min-width: 18px;
+    padding: 0 5px;
+    font-size: 12px;
+    font-weight: 800;
+    text-align: center;
+  }
+  .gol-perk-ico {
+    width: 32px;
+    height: 32px;
+    display: block;
+    margin: 0 0 @s2;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  .gol-card-over,
+  .gol-stat,
+  .gol-meta-btn,
+  .gol-next { .cg-panel(); }
+  .gol-card-over {
+    border-radius: 20px 20px @r @r;
+    box-shadow: 0 0 0 3px @gold, 0 8px 0 #3a1860;
+  }
+  .gol-overttl {
+    font-size: 36px;
+    color: @gold;
+    text-shadow: 3px 3px 0 @inkline;
+  }
+  .gol-kicker {
+    display: inline-block;
+    padding: 2px @s2;
+    background: @pump;
+    color: @inkline;
+    border: @line-strong solid @inkline;
+    border-radius: @s1;
+    letter-spacing: 0.12em;
+  }
+  .gol-btn--primary {
+    background: linear-gradient(180deg, #ffe08a, @pump 62%, #c2410c);
+    color: @inkline;
+    border: @line-strong solid @inkline;
+    border-radius: @r;
+    box-shadow: @shadow;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+  }
+  .gol-btn--ghost { .cg-panel(); color: #f4efe6; }
+
+  .gol-start-cta {
+    padding: @s2 @s5 @s2;
+    background: linear-gradient(180deg, #ffe08a, @pump 62%, #c2410c);
+    color: @inkline;
+    border: @line-strong solid @inkline;
+    border-radius: @r;
+    box-shadow: @shadow;
+    font-size: 26px;
+    letter-spacing: 0.03em;
+    text-shadow: none;
+    animation: gol-pulse 1.4s ease-in-out infinite;
+  }
+  .gol-stone-glow { animation: gol-stone-glow 2.8s ease-in-out infinite; }
+
+  .gol-coach { position: absolute; inset: 0; z-index: 9; pointer-events: none; }
+  .gol-coach-dim { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .gol-coach-ring {
+    position: absolute;
+    width: 92px;
+    height: 92px;
+    margin: -46px 0 0 -46px;
+    border: 3px dashed @gold;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 14px rgba(255, 209, 94, 0.16), 0 0 16px rgba(255, 209, 94, 0.45);
+    pointer-events: none;
+    animation: gol-coach-ring 1.2s @ease infinite;
+  }
+  .gol-coach-pin {
+    position: absolute;
+    z-index: 2;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+    em {
+      position: absolute;
+      left: 0;
+      top: 10px;
+      transform: translateX(-50%);
+      max-width: 140px;
+      font-family: @cg-body;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      text-align: center;
+      color: @gold;
+      text-shadow: 0 2px 0 @inkline;
+      white-space: normal;
+      &.is-side { left: 42px; top: -14px; transform: none; text-align: left; }
+    }
+  }
+  .gol-coach-bob {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    animation: gol-coach-bob 0.9s @ease infinite;
+    svg { position: absolute; left: 0; bottom: 0; transform-origin: center bottom; overflow: visible; }
+  }
+  .gol-coach-card {
+    position: absolute;
+    z-index: 3;
+    left: @s4;
+    right: 120px;
+    bottom: calc(env(safe-area-inset-bottom) + 196px);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: @s2;
+    padding: @s3 @s4;
+    pointer-events: none;
+    .cg-panel();
+    b {
+      font-family: @cg-body;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      line-height: 1.25;
+      color: #f7f1e6;
+      white-space: normal;
+    }
+    > span {
+      font-family: @cg-body;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: @mute;
+    }
+  }
+  .gol-coach-skip {
+    pointer-events: auto;
+    margin-top: @s1;
+    padding: 2px @s3;
+    background: transparent;
+    color: @mute;
+    border: @line solid #3a2a22;
+    border-radius: @r-sm;
+    font-family: @cg-body;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    touch-action: none;
+    &:hover { color: #f7f1e6; }
+    &:active { transform: translateY(1px) scale(0.98); }
+  }
+  .gol-coach-perk-arrow {
+    width: 0;
+    height: 0;
+    margin: 0 auto @s2;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-top: 14px solid @gold;
+    filter: drop-shadow(0 2px 0 @inkline);
+    animation: gol-coach-bob 0.9s @ease infinite;
+  }
+  .gol-coach-perk {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: @s3;
+    margin: 0 0 @s2;
+    b {
+      font-family: @cg-body;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      color: #f7f1e6;
+      white-space: normal;
+    }
+  }
+  .gol-card--coach { animation: gol-coach-pulse 1.1s @ease infinite; }
+  .gol-lives--coach { filter: drop-shadow(0 0 8px rgba(255, 209, 94, 0.85)); }
+  .gol-arm--coach { box-shadow: 0 0 0 2px @gold, @shadow; }
+  .gol-offer--coach { box-shadow: 0 0 0 2px @gold, @shadow; }
+  .gol-tutor-replay {
+    margin-top: @s2;
+    padding: @s1 @s3;
+    background: transparent;
+    color: @mute;
+    border: @line solid #3a2a22;
+    border-radius: @r-sm;
+    font-family: @cg-body;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    touch-action: none;
+    white-space: normal;
+    &:hover { color: #f7f1e6; }
+  }
+}
+
+@keyframes gol-coach-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(7px); }
+}
+@keyframes gol-coach-ring {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+@keyframes gol-coach-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px @gold, @shadow; }
+  50% { box-shadow: 0 0 0 3px @gold, 0 0 14px rgba(255, 209, 94, 0.55), @shadow; }
+}
+
+.gol.gol--cg.gol--desk {
+  .gol-rail {
+    top: @s3;
+    left: @s3;
+    bottom: @s3;
+    width: calc(var(--rail-l) - @s5);
+    gap: @s2;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+  }
+  .gol-rail-gap { display: flex; flex-direction: column; min-height: 0; }
+  .gol-score,
+  .gol-plate,
+  .gol-coming,
+  .gol-souls {
+    .cg-panel();
+    border-width: @line;
+  }
+  .gol-score {
+    padding: @s2 @s3 @s3;
+    border-radius: 18px 18px @r @r;
+  }
+  .gol-score-n { font-size: 40px; line-height: 0.9; text-shadow: 2px 2px 0 @inkline; }
+  .gol-score-night,
+  .gol-score-boss {
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    border-radius: 0;
+    backdrop-filter: none;
+    color: @mute;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+  // The path card owns the boss countdown. The score plate keeps the night only.
+  .gol-score-boss { display: none; }
+  .gol-score-boss--now { color: #ff8d96; }
+  .gol-plate { padding: @s2 @s3; border-radius: @r; }
+  .gol-coming {
+    position: relative;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: @s2;
+    min-height: 0;
+    padding: @s3;
+    overflow: hidden;
+  }
+  .gol-coming-mark {
+    position: relative;
+    width: 104px;
+    height: 132px;
+    margin: @s2 auto 0;
+    flex: 0 0 auto;
+    display: block;
+    filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.35));
+  }
+  .gol-coming-line { overflow-wrap: anywhere; }
+  .gol-coming-boss {
+    display: flex;
+    align-items: baseline;
+    gap: @s2;
+    b { font-size: 28px; line-height: 0.9; text-shadow: 2px 2px 0 @inkline; }
+    span { font-size: 10px; font-weight: 800; letter-spacing: 0.12em; color: @mute; }
+    &.is-now b { color: #ff8d96; font-size: 15px; }
+  }
+  .gol-coming .gol-shards {
+    position: relative;
+    top: auto;
+    left: auto;
+    bottom: auto;
+    width: auto;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    gap: @s2;
+    background: none;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+  }
+  .gol-souls { border-radius: 999px; padding: @s2 @s3; }
+  .gol-deskkeys { padding: 0 @s1; }
+
+  .gol-tray {
+    top: @s3;
+    right: @s3;
+    bottom: 64px;
+    width: calc(var(--rail-r) - @s5);
+    padding: @s2;
+    gap: @s2;
+    border-radius: @r;
+    background: rgba(18, 8, 28, 0.28);
+    box-shadow: inset 0 0 0 @line #3a2a22;
+  }
+  .gol-speed {
+    right: 60px;
+    bottom: @s3;
+    width: calc(var(--rail-r) - 72px);
+    height: 40px;
+    border-radius: @r;
+  }
+  .gol-mute {
+    right: @s3;
+    bottom: @s3;
+    width: 40px;
+    height: 40px;
+    border-radius: @r;
+  }
+  .gol-toasts {
+    top: @s3;
+    left: calc(var(--rail-l) + @s4);
+    right: calc(var(--rail-r) + @s4);
+  }
+  .gol-guide {
+    top: auto;
+    bottom: 18px;
+    left: calc(var(--rail-l) + (100% - var(--rail-l) - var(--rail-r)) / 2);
+    transform: translateX(-50%);
+    max-width: calc(100% - var(--rail-l) - var(--rail-r) - 32px);
+  }
+  // Beat the shared desk hover (green fill, spectral border). Accent stays on the selected card.
+  .gol-card:hover:not(:disabled) {
+    transform: translateX(-4px);
+    background: linear-gradient(180deg, @panel, @panel-2);
+    border-color: @inkline;
+    box-shadow: 0 6px 0 @inkline;
+  }
+  .gol-card:active:not(:disabled) { transform: translateX(-1px) scale(0.98); }
+  .gol-card--sel:hover:not(:disabled) {
+    transform: translateX(-4px);
+    background: linear-gradient(180deg, #342252, @panel-2);
+    border-color: @inkline;
+    box-shadow: 0 0 0 2px @gold, 0 6px 0 @inkline;
+  }
+  .gol-offer:hover {
+    background: linear-gradient(180deg, @panel, @panel-2);
+    border-color: @inkline;
+  }
+  .gol-speed:hover,
+  .gol-mute:hover { border-color: @inkline; }
+  .gol-coach-card {
+    left: calc(var(--rail-l) + @s4);
+    right: auto;
+    bottom: 148px;
+    width: min(420px, calc(100% - var(--rail-l) - var(--rail-r) - 48px));
+    transform: none;
+  }
+}

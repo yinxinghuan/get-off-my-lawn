@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -8,6 +8,8 @@ import {
   CHARACTERS, ARCHETYPES, MONSTERS, MYTHIC, rigOf,
 } from './lab';
 import { sfx } from './audio';
+import { damageMul, startingCash, startingLives } from './meta';
+import { LANE_FRAME, YARD_FRAME, type DeskRails } from './desk';
 
 // ─── Tuning ────────────────────────────────────────────────────────────────
 const START_CASH = 180;
@@ -17,7 +19,7 @@ const START_LIVES = 5;
 // instead of hitting an exponential wall around lvl 10. There's always a next level
 // to pour souls into, and it stays affordable as the nights (and your kills) climb.
 //   lvl1:55  2:145  3:256  5:524  10:1381  15:2585  20:3646 …  gentle, endless.
-const UPGRADE_COST = (lvl: number) => Math.round(55 * Math.pow(lvl, 1.4));
+export const UPGRADE_COST = (lvl: number) => Math.round(55 * Math.pow(lvl, 1.4));
 const TOWER_MAX_LVL = 99;   // effectively no ceiling — the only limit is how long you last
 const TOWER_VFORM_MAX = 4;  // the head's silhouette has 4 distinct forms; deeper levels keep the top form (+ grow)
 const ENEMY_SCALE = 0.46;
@@ -194,6 +196,7 @@ interface Enemy {
   dying: number; vy: number; spin: number; dustT: number; // death-launch anim + foot dust
   hitFlash: number; hitStop: number; flashOn: boolean;     // damage flinch (flash + brief freeze)
   hpDrawT: number;                                         // throttle CanvasTexture uploads from poison ticks
+  rush: boolean;           // night-1 opener sprints until it enters a weapon's range
 }
 interface Tower {
   g: THREE.Group; head: THREE.Group; ring: THREE.Mesh; pips: THREE.Sprite; upArrow: THREE.Sprite;
@@ -202,7 +205,7 @@ interface Tower {
   chain: number; chainR: number; dot: number; dotTime: number; // STORM chain + VENOM poison
   light?: THREE.PointLight; flicker: number; recoil: number; headY: number;
 }
-interface Plot { x: number; z: number; disc: THREE.Mesh; marker: THREE.Group; ring: THREE.Mesh; ghost: THREE.Group; tower: Tower | null; unlock: number; live: boolean; }
+interface Plot { x: number; z: number; disc: THREE.Mesh; marker: THREE.Group; ring: THREE.Mesh; ghost: THREE.Group; rangeDisc: THREE.Mesh; tower: Tower | null; unlock: number; live: boolean; }
 interface Proj {
   g: THREE.Mesh; x: number; y: number; z: number; tx: number; ty: number; tz: number;
   target: Enemy; dmg: number; slow: number; splash: number; color: number; chill: number;
@@ -211,17 +214,72 @@ interface Proj {
   sx: number; sy: number; sz: number; ex: number; ey: number; ez: number; arcH: number;
 }
 
-export interface HudState { lives: number; cash: number; score: number; wave: number; towers: number; }
+export interface HudState {
+  lives: number; cash: number; score: number; wave: number; towers: number;
+  bossHp: number; bossName: string; maxLives: number; upgrades: number;
+}
 export interface SceneHandle { restart: () => void; }
+
+/** In-run multipliers from the end-of-night pick (and the permanent damage rank). */
+export interface Mods { dmg: number; rate: number; range: number; bounty: number; }
+const IDENTITY_MODS: Mods = { dmg: 1, rate: 1, range: 1, bounty: 1 };
+
+export interface WavePreview {
+  wave: number;
+  boss: boolean;
+  bossName: string;
+  lineup: { key: string; count: number }[];
+}
+export interface NightReport { wave: number; kills: number; souls: number; lives: number; }
+export interface InspectInfo {
+  mode: 'place' | 'upgrade';
+  typeId: string;
+  name: string;
+  level: number;
+  range: number; dmg: number; rate: number;
+  nextRange: number; nextDmg: number; nextRate: number;
+  cost: number;
+}
+/** Written by the React HUD; the sim reads it once per tick. */
+export interface GameCommands {
+  perk: string | null;
+  start: boolean;
+  upgrade: boolean;
+  speed: number;
+  /** Guest tutorial is on screen. Host leaves this false. */
+  coach: boolean;
+  /** Hold the night-1 auto start until the player presses Space or the button. */
+  coachHold: boolean;
+}
+export interface CoachSpots {
+  socket: { x: number; y: number } | null;
+  spawn: { x: number; y: number } | null;
+  /** Screen-space direction ghosts walk, from the gate onto the path. */
+  spawnDir: { x: number; y: number };
+  tower: { x: number; y: number } | null;
+  hold: string;
+}
+/** Seconds the player has to spend souls between nights before the next wave walks in. Space skips it. */
+export const PREP_SECONDS = 2.6;
 
 type Mode = 'attract' | 'play' | 'over';
 interface Props {
   mode: Mode;
   selectedType: number;
   onHud: (h: HudState) => void;
-  onWave: (w: number, boss: boolean) => void;
-  onGameOver: (score: number) => void;
+  onWave: (preview: WavePreview) => void;
+  onNightClear: (report: NightReport) => void;
+  onInspect: (info: InspectInfo) => void;
+  onGameOver: (score: number, wave: number) => void;
   registerRestart: (fn: () => void) => void;
+  commands: MutableRefObject<GameCommands>;
+  /** Guest tutorial markers. Host omits this. */
+  onCoach?: (spots: CoachSpots) => void;
+  /** Crazy Games landscape framing. Host and portrait guests leave this off. */
+  desk?: boolean;
+  rails?: DeskRails;
+  /** Crazy Games guest build. Host leaves this off so placement rings stay as they are. */
+  guest?: boolean;
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -273,9 +331,22 @@ function drawHpBar(s: THREE.Sprite, frac: number) {
   (s as any).__tex.needsUpdate = true;
 }
 
+/** Pixel span of world-space XZ points under the current orthographic camera. */
+function projectSpan(cam: THREE.Camera, pts: [number, number][], w: number, h: number) {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [x, z] of pts) {
+    const q = new THREE.Vector3(x, 0.3, z).project(cam);
+    const px = (q.x + 1) / 2 * w;
+    const py = (1 - q.y) / 2 * h;
+    minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+    minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+  }
+  return { w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY), cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
+}
+
 // ─── The game world + loop ──────────────────────────────────────────────────
-function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart }: Props) {
-  const { scene, camera, gl } = useThree();
+function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onGameOver, registerRestart, commands, onCoach, desk = false, rails, guest = false }: Props) {
+  const { scene, camera, gl, size } = useThree();
   const root = useMemo(() => new THREE.Group(), []);
   const fx = useMemo(() => new THREE.Group(), []);
 
@@ -290,30 +361,93 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
     waveBreak: 1.2, betweenWaves: true, demoReady: false, attractT: 0,
     houseGroup: null as THREE.Group | null, houseFlash: 0,
     over: false, time: 0,
-    lastHud: { lives: -1, cash: -1, score: -1, wave: -1, towers: -1 } as HudState,
+    lastHud: { lives: -1, cash: -1, score: -1, wave: -1, towers: -1, bossHp: -1, bossName: '', maxLives: -1, upgrades: -1 } as HudState,
     fxLayer: fx as THREE.Group,
     onHud: onHud as (h: HudState) => void,
     motes: null as THREE.Points | null,
     mist: null as THREE.Group | null,
     selectedType: 0,
     perfTier: 0,
+    mods: { ...IDENTITY_MODS } as Mods,
+    hold: 'wait' as string,
+    simAcc: 0,
+    idleArm: 0,
+    nightKills: 0,
+    nightSouls: 0,
+    upgrades: 0,
+    maxLives: START_LIVES,
+    bossHp: 0,
+    bossName: '',
+    shownRange: -1,
+    inspectSig: '',
+    hoverPlot: null as Plot | null,
+    hoverTower: null as Tower | null,
+    rushNext: false,
+    cmdRef: null as MutableRefObject<GameCommands> | null,
+    onWaveCb: null as ((p: WavePreview) => void) | null,
+    onNightClear: null as ((r: NightReport) => void) | null,
+    onInspect: null as ((i: InspectInfo) => void) | null,
+    onCoach: null as ((s: CoachSpots) => void) | null,
   });
   S.current.selectedType = selectedType; // keep the chosen weapon in sync each render
+  S.current.cmdRef = commands;
+  S.current.onWaveCb = onWave;
+  S.current.onNightClear = onNightClear;
+  S.current.onInspect = onInspect;
+  S.current.onHud = onHud;
+  S.current.onCoach = onCoach || null;
 
   // orbital camera — drag to rotate the board around its centre (azimuth only).
   const CC = useMemo(() => new THREE.Vector3(0, 0, -1.2), []);  // board centre
   const CAM_R = 16.8, CAM_H = 12, CAM_ZOOM = 58;
   const BASE_AZ = Math.atan2(9, 14.2);
   const azimuthRef = useRef(BASE_AZ);
+  const frameRef = useRef({ desk, mode, railL: rails?.left ?? 0, railR: rails?.right ?? 0, w: size.width, h: size.height });
+  frameRef.current = { desk, mode, railL: rails?.left ?? 0, railR: rails?.right ?? 0, w: size.width, h: size.height };
+  const guestRef = useRef(guest);
+  guestRef.current = guest;
+  const coachAcc = useRef(0);
+  const coachSig = useRef('');
+  const coachV = useRef(new THREE.Vector3());
   const applyCam = useCallback(() => {
     const cam = camera as THREE.OrthographicCamera;
     const az = azimuthRef.current;
+    const { desk: framed, mode: frameMode, railL, railR, w, h } = frameRef.current;
     cam.position.set(CC.x + CAM_R * Math.sin(az), CAM_H, CC.z + CAM_R * Math.cos(az));
-    cam.zoom = CAM_ZOOM; cam.near = 0.1; cam.far = 200;
+    cam.near = 0.1; cam.far = 200;
     cam.lookAt(CC.x, 0.2, CC.z);
+    cam.updateMatrixWorld();
+    if (w > 0 && h > 0) {
+      cam.left = -w / 2; cam.right = w / 2; cam.top = h / 2; cam.bottom = -h / 2;
+    }
+    cam.clearViewOffset();
+    cam.zoom = CAM_ZOOM;
     cam.updateProjectionMatrix();
+    // Phone / portrait: fixed zoom. The host build always stays here.
+    // Landscape guest: scale the yard up until it fills the iframe, and while
+    // fighting slide it so the lane sits between the side rails.
+    if (framed && w > 0 && h > 0) {
+      const yardPx = projectSpan(cam, YARD_FRAME, w, h);
+      // Play keeps a sky band at the top of the lane so the one toast slot
+      // sits above the graves. Attract still fills the frame. Host never frames.
+      const toastBand = frameMode === 'play' ? Math.min(88, Math.round(h * 0.12)) : 0;
+      const pad = frameMode === 'play' ? 1.0 : 1.04;
+      const fitH = Math.max(1, h - toastBand);
+      cam.zoom = CAM_ZOOM * Math.min((w * pad) / yardPx.w, (fitH * pad) / yardPx.h);
+      cam.updateProjectionMatrix();
+      const focus = frameMode === 'play' ? LANE_FRAME : YARD_FRAME;
+      const box = projectSpan(cam, focus, w, h);
+      const playCx = frameMode === 'play' ? railL + (w - railL - railR) / 2 : w / 2;
+      const playCy = (h + toastBand) / 2;
+      const dx = box.cx - playCx;
+      const dy = box.cy - playCy;
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        cam.setViewOffset(w, h, dx, dy, w, h);
+        cam.updateProjectionMatrix();
+      }
+    }
   }, [camera, CC]);
-  useEffect(() => { applyCam(); }, [applyCam]);
+  useLayoutEffect(() => { applyCam(); }, [applyCam, desk, mode, rails?.left, rails?.right, size.width, size.height]);
 
   // build the static board once
   useEffect(() => {
@@ -355,7 +489,7 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
         const cost = TOWER_TYPES[ti].cost;
         if (st.cash >= cost) {
           st.cash -= cost;
-          plot.tower = plantTower(root, plot, ti);
+          plot.tower = plantTower(root, plot, ti, st.mods);
           st.towers.push(plot.tower);
           plot.marker.visible = false;
           popIn(plot.tower.g);                                   // slam-in pop
@@ -369,30 +503,48 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
         if (tw.level >= TOWER_MAX_LVL) { return; }
         const cost = UPGRADE_COST(tw.level);
         if (st.cash >= cost) {
-          st.cash -= cost; upgradeTower(tw); sfx.upgrade();
+          st.cash -= cost; upgradeTower(tw, st.mods); st.upgrades = (st.upgrades || 0) + 1; sfx.upgrade();
           punch(tw.head);                                  // tower jolts
-          deathBurst(fx, tw.x, tw.z, tw.color);            // upward spark burst
+          if (guestRef.current) sparkBurst(fx, tw.x, tw.z);
+          else deathBurst(fx, tw.x, tw.z);
           ringPulse(fx, tw.x, tw.z, tw.color);
           pushHud(st);
         } else { bounce(tw.g); sfx.splat(); floatCost(fx, tw.x, tw.z, fmtCost(cost), 0xff5c6b); } // show the price you're short on
       }
     }
-    function onDown(e: PointerEvent) { pd = { x: e.clientX, y: e.clientY, moved: false }; }
+    function hoverAt(e: PointerEvent) {
+      if (mode !== 'play') return;
+      const st = S.current;
+      const r = el.getBoundingClientRect();
+      v.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+      v.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+      ray.setFromCamera(v, camera);
+      const hits = ray.intersectObjects(st.plots.map((p) => p.disc), false);
+      const plot = hits.length ? st.plots.find((p) => p.disc === hits[0].object) || null : null;
+      st.hoverPlot = plot;
+      st.hoverTower = plot?.tower || null;
+      pushInspect(st);
+    }
+    function onDown(e: PointerEvent) { pd = { x: e.clientX, y: e.clientY, moved: false }; hoverAt(e); }
     function onMove(e: PointerEvent) {
+      hoverAt(e);
       if (!pd) return;
       const dx = e.clientX - pd.x, dy = e.clientY - pd.y;
       if (!pd.moved && Math.hypot(dx, dy) > 14) pd.moved = true; // higher threshold so taps aren't eaten as drags
       if (pd.moved) { azimuthRef.current -= dx * 0.006; pd.x = e.clientX; pd.y = e.clientY; applyCam(); }
     }
     function onUp(e: PointerEvent) { if (pd && !pd.moved) tap(e); pd = null; }
+    function onLeave() { const st = S.current; st.hoverPlot = null; st.hoverTower = null; pushInspect(st); }
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointermove', onMove);
     el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointerleave', onLeave);
     el.addEventListener('pointercancel', () => { pd = null; });
     return () => {
       el.removeEventListener('pointerdown', onDown);
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointerleave', onLeave);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, camera, gl, applyCam]);
@@ -419,11 +571,12 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
         [10, 4, 2], [12, 4, 4],  // VENOM urns
       ];
       void rows;
+      st.hold = 'showcase';
       plan.forEach(([idx, ty, lvl]) => {
         const plot = st.plots[idx];
         if (plot && !plot.tower) {
-          plot.tower = plantTower(root, plot, ty);
-          for (let k = 1; k < lvl; k++) upgradeTower(plot.tower);
+          plot.tower = plantTower(root, plot, ty, st.mods);
+          for (let k = 1; k < lvl; k++) upgradeTower(plot.tower, st.mods);
           st.towers.push(plot.tower); plot.marker.visible = false;
         }
       });
@@ -434,8 +587,8 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
       [[2, 0], [3, 2], [1, 1], [6, 0]].forEach(([idx, ty]) => {
         const plot = st.plots[idx];
         if (plot && !plot.tower) {
-          plot.tower = plantTower(root, plot, ty);
-          if (idx === 3) { upgradeTower(plot.tower); upgradeTower(plot.tower); }
+          plot.tower = plantTower(root, plot, ty, st.mods);
+          if (idx === 3) { upgradeTower(plot.tower, st.mods); upgradeTower(plot.tower, st.mods); }
           st.towers.push(plot.tower); plot.marker.visible = false;
         }
       });
@@ -451,286 +604,473 @@ function World({ mode, selectedType, onHud, onWave, onGameOver, registerRestart 
 
   // ─── main loop ───
   useFrame((_, dtRaw) => {
-    const st = S.current;
-    const dt = Math.min(dtRaw, 0.05);
-    st.time += dt;
-
-    if (st.motes) { st.motes.rotation.y += dt * 0.02; st.motes.position.y = Math.sin(st.time * 0.3) * 0.14; }
-    if (st.mist) {
-      for (const m of st.mist.children) {
-        m.position.x += (m as any).__sp * (m as any).__dir * dt;
-        m.rotation.z += dt * 0.04 * (m as any).__dir;
-        if (m.position.x > 5) (m as any).__dir = -1;
-        if (m.position.x < -5) (m as any).__dir = 1;
-      }
-    }
-
-    // build sockets: bright glowing ring + floating ghost flame when affordable,
-    // dim when you can't yet pay — so "when you can build" reads at a glance
-    for (const p of st.plots) {
-      if (p.tower) { p.marker.visible = false; continue; }
-      if (!p.live) {
-        // a dormant future plot — a faint dim ring (no glow, no ghost) so you can
-        // see new ground will open here, but it isn't buildable yet
-        p.marker.visible = true;
-        const rm = p.ring.material as THREE.MeshBasicMaterial;
-        rm.color.setHex(0x46504a); rm.opacity = 0.16;
-        p.ring.scale.setScalar(0.8);
-        p.ghost.visible = false;
-        continue;
-      }
-      const aff = st.cash >= TOWER_TYPES[st.selectedType].cost;
-      p.marker.visible = true;
-      const rm = p.ring.material as THREE.MeshBasicMaterial;
-      if (aff) {
-        const pulse = 0.6 + Math.sin(st.time * 3.2 + p.x) * 0.28;
-        rm.color.setHex(0x79e0ad); rm.opacity = pulse;
-        p.ring.scale.setScalar(1 + Math.sin(st.time * 3.2 + p.x) * 0.06);
-        p.ghost.visible = true;
-        p.ghost.position.y = Math.sin(st.time * 2 + p.x) * 0.07;
-      } else {
-        rm.color.setHex(0x5a6b62); rm.opacity = 0.22;
-        p.ring.scale.setScalar(0.9);
-        p.ghost.visible = false;
-      }
-    }
-
-    if (st.houseFlash > 0 && st.houseGroup) {
-      st.houseFlash -= dt;
-      st.houseGroup.position.x = Math.sin(st.time * 60) * st.houseFlash * 0.12;
-    }
-
-    const isPlay = mode === 'play' && !st.over;
-    const isAttract = mode === 'attract';
-    if (!isPlay && !isAttract) { renderFx(fx, dt); return; }
-
-    if (isAttract) {
-      // live attract demo: pre-place a couple of sprinklers, trickle intruders
-      if (!st.demoReady) {
-        [[2, 0], [3, 2], [6, 1]].forEach(([idx, ty]) => {
-          const plot = st.plots[idx];
-          if (plot && !plot.tower) {
-            plot.tower = plantTower(root, plot, ty);
-            if (idx === 3) upgradeTower(plot.tower);
-            st.towers.push(plot.tower); plot.marker.visible = false;
-          }
-        });
-        st.demoReady = true;
-      }
-      st.attractT -= dt;
-      if (st.attractT <= 0 && st.enemies.length < 6) {
-        const pool = poolForWave(2);
-        spawnEnemy(root, st, pool[Math.floor(Math.random() * pool.length)]);
-        st.attractT = 1.5;
-      }
+    // Fixed 1/60s steps so a 144Hz panel and a 165Hz panel simulate the same
+    // defence. 2× speed adds steps; it does not scale a per-frame increment.
+    // The 50ms frame cap keeps a hitch from simulating a huge backlog.
+    // The between-night pick and the showcase freeze the accumulator.
+    const frameDt = Math.min(Math.max(0, dtRaw), 0.05);
+    const rootSt = S.current;
+    const STEP = 1 / 60;
+    const ticks: number[] = [];
+    if (rootSt.hold === 'choice' || rootSt.hold === 'showcase') {
+      rootSt.simAcc = 0;
+      ticks.push(frameDt);
     } else {
-      // ── real wave director ──
-      if (st.betweenWaves) {
-        st.waveBreak -= dt;
-        if (st.waveBreak <= 0) startWave(st, onWave);
-      } else {
-        st.spawnT -= dt;
-        if (st.spawnT <= 0 && st.spawnQ.length) {
-          const def = st.spawnQ.shift()!;
-          spawnEnemy(root, st, def);
-          st.spawnT = st.spawnGap;
-        }
-        if (!st.spawnQ.length && st.enemies.length === 0) {
-          st.betweenWaves = true;
-          st.waveBreak = 2.6;
+      const speed = rootSt.hold === 'fight' && rootSt.cmdRef?.current?.speed === 2 ? 2 : 1;
+      rootSt.simAcc = (rootSt.simAcc || 0) + frameDt * speed;
+      let guard = 0;
+      while (rootSt.simAcc >= STEP && guard < 5) {
+        rootSt.simAcc -= STEP;
+        ticks.push(STEP);
+        guard++;
+      }
+    }
+    if (guestRef.current && rootSt.cmdRef?.current?.coach && rootSt.onCoach && rootSt.plots.length) {
+      coachAcc.current += frameDt;
+      if (coachAcc.current >= 0.12) {
+        coachAcc.current = 0;
+        const rect = gl.domElement.getBoundingClientRect();
+        const project = (x: number, z: number) => {
+          coachV.current.set(x, 0.45, z).project(camera);
+          return {
+            x: ((coachV.current.x + 1) / 2) * rect.width + rect.left,
+            y: ((-coachV.current.y + 1) / 2) * rect.height + rect.top,
+          };
+        };
+        const empty = rootSt.plots.filter((p) => p.live && !p.tower);
+        empty.sort((a, b) => a.z - b.z || Math.abs(a.x) - Math.abs(b.x));
+        const sock = empty[0];
+        const tw = rootSt.towers[0];
+        const gate = posAlong(0.35);
+        const ahead = posAlong(1.7);
+        const spawn = project(gate.x, gate.z);
+        const nextPt = project(ahead.x, ahead.z);
+        const next: CoachSpots = {
+          socket: sock ? project(sock.x, sock.z) : null,
+          spawn,
+          spawnDir: { x: nextPt.x - spawn.x, y: nextPt.y - spawn.y },
+          tower: tw ? project(tw.x, tw.z) : null,
+          hold: rootSt.hold,
+        };
+        const sig = [
+          next.hold,
+          Math.round(next.socket?.x || 0), Math.round(next.socket?.y || 0),
+          Math.round(next.spawn?.x || 0), Math.round(next.spawn?.y || 0),
+          Math.round(next.tower?.x || 0), Math.round(next.tower?.y || 0),
+        ].join(':');
+        if (sig !== coachSig.current) {
+          coachSig.current = sig;
+          rootSt.onCoach(next);
         }
       }
     }
+    for (const dt of ticks) {
+      const st = rootSt;
+        st.time += dt;
+        consumeCommands(root, fx, st, onWave);
 
-    // Preserve the full simulation; only reduce decoration while a dense mob is
-    // visible. The thresholds have hysteresis through the three stable bands,
-    // avoiding frame-by-frame quality churn around a single enemy count.
-    let nextPerfTier = st.perfTier;
-    if (st.perfTier === 0 && st.enemies.length >= 15) nextPerfTier = 1;
-    else if (st.perfTier === 1 && st.enemies.length >= 25) nextPerfTier = 2;
-    else if (st.perfTier === 1 && st.enemies.length < 13) nextPerfTier = 0;
-    else if (st.perfTier === 2 && st.enemies.length < 23) nextPerfTier = st.enemies.length >= 13 ? 1 : 0;
-    if (nextPerfTier !== st.perfTier) {
-      st.perfTier = nextPerfTier;
-      visualLoadTier = nextPerfTier;
-      particleLimit = nextPerfTier === 2 ? 48 : nextPerfTier === 1 ? 96 : MAX_PARTICLES;
-      // At peak load, retain the already-rendered shadows but stop regenerating
-      // the map for every moving enemy. Restore normally once the pack thins.
-      gl.shadowMap.autoUpdate = nextPerfTier < 2;
-      if (nextPerfTier < 2) gl.shadowMap.needsUpdate = true;
-    }
-
-    // ── enemies march along the winding path ──
-    for (const en of st.enemies) {
-      if (en.dying > 0) { // death-launch animation (corpse flies + shrinks)
-        en.dying -= dt;
-        en.vy -= 16 * dt;
-        en.g.position.y = Math.max(0, en.g.position.y + en.vy * dt);
-        en.g.rotation.z += en.spin * dt;
-        en.g.scale.multiplyScalar(Math.max(0, 1 - dt * 2.4));
-        continue;
-      }
-      if (en.dead) continue;
-      // VENOM poison — drains HP over time even after the urn stops firing
-      if (en.poison > 0) {
-        en.poison -= dt;
-        en.hp -= en.poisonDps * dt;
-        // A CanvasTexture upload per poisoned enemy per frame is disproportionately
-        // expensive on mobile GPUs. Damage still ticks at 60fps; only its tiny UI
-        // representation is sampled at 8fps.
-        en.hpDrawT -= dt;
-        if (en.hpBar && en.hpDrawT <= 0) {
-          drawHpBar(en.hpBar, en.hp / en.maxHp);
-          en.hpDrawT = st.perfTier === 2 ? 0.25 : st.perfTier === 1 ? 0.16 : 0.125;
-        }
-        en.poisonT -= dt;
-        if (en.poisonT <= 0) { splash(fx, en.x, 0.55, en.z, 0x9be83a); en.poisonT = 0.32; }
-        if (en.hp <= 0) { killEnemy(st, en, root); continue; }
-      }
-      let spd = en.spd;
-      if (en.slow > 0) { en.slow -= dt; spd *= 0.5; }
-      if (en.hitStop > 0) { en.hitStop -= dt; spd = 0; }  // momentary stagger
-      en.dist += spd * dt;
-      en.phase += dt * spd * 3.2;
-      const p = posAlong(en.dist);
-      en.x = p.x + p.px * en.laneOff;
-      en.z = p.z + p.pz * en.laneOff;
-      const bob = en.def.legs ? Math.abs(Math.sin(en.phase)) * 0.04 : Math.abs(Math.sin(en.phase)) * 0.09;
-      en.g.position.set(en.x, bob, en.z);
-      en.g.rotation.y = Math.atan2(p.dx, p.dz); // face along the path
-      // walk anim
-      if (en.def.legs) {
-        const rig = rigOf(en.g);
-        const sw = Math.sin(en.phase) * 0.5;
-        if (rig?.legL) rig.legL.rotation.x = sw;
-        if (rig?.legR) rig.legR.rotation.x = -sw;
-        if (rig?.armL) rig.armL.rotation.x = -sw * 0.7;
-        if (rig?.armR) rig.armR.rotation.x = sw * 0.7;
-      }
-      if (en.hpBar) en.hpBar.position.set(en.x, 1.5 * en.def.scale * ENEMY_SCALE + 0.9, en.z);
-      // foot dust kicked up as they shamble (bipeds only; ghosts float)
-      if (en.def.legs && en.hitStop <= 0) { en.dustT -= dt; if (en.dustT <= 0) { footDust(fx, en.x, en.z); en.dustT = 0.34; } }
-      // reached the crypt
-      if (en.dist >= PATH_TOTAL) {
-        en.reached = true; en.dead = true;
-        if (isAttract) { continue; } // demo: harmless, no life loss
-        st.lives -= 1; st.houseFlash = 0.5; sfx.reachHouse();
-        if (st.lives <= 0) endGame(st, onGameOver);
-        pushHud(st);
-      }
-    }
-
-    // ── towers target + fire ──
-    for (const tw of st.towers) {
-      tw.cd -= dt;
-      // brazier flame flicker → restless pool of light
-      tw.flicker += dt * 11;
-      if (tw.light) tw.light.intensity = (5 + tw.level * 1.6) * (0.78 + 0.22 * Math.sin(tw.flicker) + 0.08 * Math.sin(tw.flicker * 2.7));
-      // "can upgrade now" cue — a bobbing gold up-arrow when you can afford it
-      // always show the next-upgrade cost when below the ceiling — BRIGHT + bobbing
-      // when you can afford it, DIMMED + still when you can't (so a cost wall reads
-      // as "needs more souls", never as a broken/locked tower).
-      const notMax = !isAttract && tw.level < TOWER_MAX_LVL;
-      tw.upArrow.visible = notMax;
-      if (notMax) {
-        const afford = st.cash >= UPGRADE_COST(tw.level);
-        (tw.upArrow.material as THREE.SpriteMaterial).opacity = afford ? 1 : 0.4;
-        tw.upArrow.position.y = 2.12 + (afford ? Math.sin(st.time * 4 + tw.x) * 0.09 : 0);
-        const p = afford ? 1 + 0.1 * Math.sin(st.time * 6) : 0.78;
-        tw.upArrow.scale.set(0.92 * p, 0.69 * p, 1);
-      }
-      // in-range enemy that is furthest along the path (closest to the crypt)
-      let best: Enemy | null = null; let bestD = -Infinity;
-      for (const en of st.enemies) {
-        if (en.dead) continue;
-        const dx = en.x - tw.x, dz = en.z - tw.z;
-        if (dx * dx + dz * dz <= tw.range * tw.range && en.dist > bestD) { best = en; bestD = en.dist; }
-      }
-      if (best) {
-        const desired = Math.atan2(best.x - tw.x, best.z - tw.z);
-        tw.yaw += angDelta(tw.yaw, desired) * Math.min(1, dt * 14);
-        tw.head.rotation.y = tw.yaw;
-        if (tw.cd <= 0) {
-          tw.cd = 1 / tw.rate;
-          fireWater(fx, st, tw, best);
-          tw.recoil = tw.splash > 0 ? 0.2 : 0.12; // a kick when it shoots
-          const k = TOWER_TYPES[tw.type].head;
-          if (k === 'flame') sfx.fire(); else if (k === 'crystal') sfx.frost();
-          else if (k === 'coil') sfx.storm(); else if (k === 'urn') sfx.plague(); else sfx.mortar();
-        }
-      }
-      // recoil decay — the head kicks back along its aim, then settles
-      if (tw.recoil > 0) tw.recoil = Math.max(0, tw.recoil - dt * 1.4);
-      tw.head.position.set(-Math.sin(tw.yaw) * tw.recoil, tw.headY, -Math.cos(tw.yaw) * tw.recoil);
-    }
-
-    // ── projectiles ──
-    for (const pr of st.projs) {
-      if (pr.arc) {
-        // MORTAR — ballistic lob to the ground spot, then a big splash blast
-        pr.t += dt / pr.flight;
-        if (pr.t >= 1) {
-          splashHit(st, root, pr.ex, pr.ez, pr.splash, pr.dmg, pr.slow);
-          ringPulse(fx, pr.ex, pr.ez, pr.color);
-          splash(fx, pr.ex, 0.4, pr.ez, pr.color); splash(fx, pr.ex, 0.4, pr.ez, pr.color);
-          sfx.boom();
-          pr.x = 1e9;
-        } else {
-          const u = pr.t;
-          pr.x = pr.sx + (pr.ex - pr.sx) * u;
-          pr.z = pr.sz + (pr.ez - pr.sz) * u;
-          pr.y = pr.sy + (pr.ey - pr.sy) * u + pr.arcH * Math.sin(u * Math.PI);
-          pr.g.position.set(pr.x, pr.y, pr.z);
-          pr.g.rotation.x += dt * 9; pr.g.rotation.z += dt * 6; // tumbling shell
-        }
-        continue;
-      }
-      // FIRE / FROST — home in fast on the target
-      const en = pr.target;
-      if (!en.dead) { pr.tx = en.x; pr.tz = en.z; pr.ty = 0.5; }
-      const dx = pr.tx - pr.x, dy = pr.ty - pr.y, dz = pr.tz - pr.z;
-      const d = Math.hypot(dx, dy, dz);
-      const step = 18 * dt;
-      if (d <= step || en.dead) {
-        if (!en.dead) {
-          en.hp -= pr.dmg; en.slow = Math.max(en.slow, pr.slow); hitReact(en, pr.dmg);
-          // VENOM — stamp a poison that keeps ticking the enemy down (refresh, keep strongest)
-          if (pr.dot > 0) { en.poisonDps = Math.max(en.poisonDps, pr.dot); en.poison = Math.max(en.poison, pr.dotTime); }
-          if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
-          if (en.hp <= 0) killEnemy(st, en, root);
-        }
-        // FROST chills a small area — slow (no damage) everyone nearby + a frost ring
-        if (pr.chill > 0) {
-          for (const e of st.enemies) {
-            if (e.dead || e === en) continue;
-            const cx = e.x - pr.x, cz = e.z - pr.z;
-            if (cx * cx + cz * cz <= pr.chill * pr.chill) e.slow = Math.max(e.slow, pr.slow);
+        if (st.motes) { st.motes.rotation.y += dt * 0.02; st.motes.position.y = Math.sin(st.time * 0.3) * 0.14; }
+        if (st.mist) {
+          for (const m of st.mist.children) {
+            m.position.x += (m as any).__sp * (m as any).__dir * dt;
+            m.rotation.z += dt * 0.04 * (m as any).__dir;
+            if (m.position.x > 5) (m as any).__dir = -1;
+            if (m.position.x < -5) (m as any).__dir = 1;
           }
-          ringPulse(fx, pr.x, pr.z, pr.color);
         }
-        splash(fx, pr.x, 0.4, pr.z, pr.color);
-        pr.x = 1e9;
-      } else {
-        pr.x += (dx / d) * step; pr.y += (dy / d) * step; pr.z += (dz / d) * step;
-        pr.g.position.set(pr.x, pr.y, pr.z);
-        pr.g.lookAt(pr.tx, pr.ty, pr.tz); // orient the icy shard along its flight
-      }
-    }
-    // cull
-    st.projs = st.projs.filter((pr) => {
-      if (pr.x > 1e8) { fx.remove(pr.g); disposeGroup(pr.g); return false; }
-      return true;
-    });
-    st.enemies = st.enemies.filter((en) => {
-      if (en.dead && en.dying <= 0) {
-        if (en.hpBar) { fx.remove(en.hpBar); }
-        root.remove(en.g); disposeGroup(en.g);
-        return false;
-      }
-      return true;
-    });
 
-    renderFx(fx, dt);
+        // build sockets: bright glowing ring + floating ghost flame when affordable,
+        // dim when you can't yet pay — so "when you can build" reads at a glance.
+        // Empty live sockets also draw the selected weapon's range.
+        const placeRange = projectStats(st.selectedType, 1, st.mods || IDENTITY_MODS).range;
+        const guestNow = guestRef.current;
+        const rangeSig = placeRange + (guestNow ? 0.001 : 0);
+        if (st.plots.length && Math.abs((st.shownRange ?? -1) - rangeSig) > 0.02) {
+          st.shownRange = rangeSig;
+          const band = guestNow ? 0.12 : 0.08;
+          for (const p of st.plots) {
+            p.rangeDisc.geometry.dispose();
+            if (guestNow) {
+              p.rangeDisc.geometry = new THREE.CircleGeometry(placeRange, 48);
+              const mat = p.rangeDisc.material as THREE.MeshBasicMaterial;
+              mat.map = guestRangeMap();
+              mat.color.setHex(0xffffff);
+              mat.depthWrite = false;
+            } else {
+              p.rangeDisc.geometry = new THREE.RingGeometry(Math.max(0.2, placeRange - band), placeRange, 42);
+            }
+          }
+        }
+        for (const p of st.plots) {
+          if (p.tower) { p.marker.visible = false; p.rangeDisc.visible = false; continue; }
+          if (!p.live) {
+            // a dormant future plot — a faint dim ring (no glow, no ghost) so you can
+            // see new ground will open here, but it isn't buildable yet
+            p.marker.visible = true;
+            p.rangeDisc.visible = false;
+            const rm = p.ring.material as THREE.MeshBasicMaterial;
+            rm.color.setHex(0x46504a); rm.opacity = 0.16;
+            p.ring.scale.setScalar(0.8);
+            p.ghost.visible = false;
+            continue;
+          }
+          const aff = st.cash >= TOWER_TYPES[st.selectedType].cost;
+          p.marker.visible = true;
+          // Guest: one gold ring, on the pad under the cursor. Host: every empty socket.
+          const showRange = mode === 'play' && st.hold !== 'showcase' && (!guestNow || st.hoverPlot === p);
+          p.rangeDisc.visible = showRange;
+          if (showRange) {
+            const rmR = p.rangeDisc.material as THREE.MeshBasicMaterial;
+            if (guestNow) {
+              rmR.opacity = 0.78 + 0.22 * Math.sin(st.time * 3.1);
+              p.rangeDisc.rotation.z += dt * 0.45;
+            } else {
+              rmR.color.setHex(TOWER_TYPES[st.selectedType].color);
+              rmR.opacity = st.hoverPlot === p ? 0.62 : 0.34;
+            }
+          }
+          const rm = p.ring.material as THREE.MeshBasicMaterial;
+          if (guestNow) {
+            // One accent on the pad under the cursor. Other sockets stay bone-dim
+            // so they don't compete with the gold range ring.
+            const hot = st.hoverPlot === p;
+            if (aff) {
+              rm.color.setHex(hot ? 0xffd15e : 0xc8bfa6);
+              rm.opacity = hot ? 0.55 : 0.2;
+              p.ring.scale.setScalar(hot ? 1.04 : 0.9);
+              p.ghost.visible = true;
+              p.ghost.position.y = Math.sin(st.time * 2 + p.x) * 0.07;
+            } else {
+              rm.color.setHex(0x5a5348); rm.opacity = 0.14;
+              p.ring.scale.setScalar(0.86);
+              p.ghost.visible = false;
+            }
+          } else if (aff) {
+            const pulse = 0.6 + Math.sin(st.time * 3.2 + p.x) * 0.28;
+            rm.color.setHex(0x79e0ad); rm.opacity = pulse;
+            p.ring.scale.setScalar(1 + Math.sin(st.time * 3.2 + p.x) * 0.06);
+            p.ghost.visible = true;
+            p.ghost.position.y = Math.sin(st.time * 2 + p.x) * 0.07;
+          } else {
+            rm.color.setHex(0x5a6b62); rm.opacity = 0.22;
+            p.ring.scale.setScalar(0.9);
+            p.ghost.visible = false;
+          }
+        }
+
+        if (st.houseFlash > 0 && st.houseGroup) {
+          st.houseFlash -= dt;
+          st.houseGroup.position.x = Math.sin(st.time * 60) * st.houseFlash * 0.12;
+        }
+
+        const isPlay = mode === 'play' && !st.over;
+        const isAttract = mode === 'attract';
+        if (!isPlay && !isAttract) { renderFx(fx, dt); return; }
+
+        if (isAttract) {
+          // live attract demo: pre-place a couple of sprinklers, trickle intruders
+          if (!st.demoReady) {
+            [[2, 0], [3, 2], [6, 1]].forEach(([idx, ty]) => {
+              const plot = st.plots[idx];
+              if (plot && !plot.tower) {
+                plot.tower = plantTower(root, plot, ty, st.mods);
+                if (idx === 3) upgradeTower(plot.tower, st.mods);
+                st.towers.push(plot.tower); plot.marker.visible = false;
+              }
+            });
+            st.demoReady = true;
+          }
+          st.attractT -= dt;
+          if (st.attractT <= 0 && st.enemies.length < 6) {
+            const pool = poolForWave(2);
+            spawnEnemy(root, st, pool[Math.floor(Math.random() * pool.length)]);
+            st.attractT = 1.5;
+          }
+          } else if (st.hold !== 'showcase') {
+          // ── real wave director ──
+          // Night 1 holds until the first weapon is down (or the player idles), so the
+          // opening kill lands in the first few seconds of a real defence instead of
+          // after a long empty walk.
+          if (st.betweenWaves) {
+            if (st.hold === 'choice') {
+              // paused for the end-of-night pick
+            } else if (st.wave === 0 && st.towers.length === 0) {
+              // Tutorial step 1 holds the idle auto-start so the lesson isn't skipped.
+              if (!st.cmdRef?.current?.coachHold) {
+                st.idleArm = (st.idleArm || 0) + dt;
+                if (st.idleArm >= 7) beginNight(st, onWave, 0.35);
+              }
+            } else if (st.wave === 0 && st.towers.length > 0) {
+              beginNight(st, onWave, 0.4);
+            } else if (st.hold === 'arm') {
+              if (st.cmdRef?.current?.start) {
+                st.cmdRef.current.start = false;
+                st.cmdRef.current.coachHold = false;
+                st.waveBreak = 0;
+              }
+              // Tutorial step 2 waits for Space or the button. Every other night still counts down.
+              if (!st.cmdRef?.current?.coachHold) st.waveBreak -= dt;
+              if (st.waveBreak <= 0) releaseWave(st);
+            }
+          } else {
+            if (st.cmdRef?.current) st.cmdRef.current.start = false;
+            st.spawnT -= dt;
+            if (st.spawnT <= 0 && st.spawnQ.length) {
+              const def = st.spawnQ.shift()!;
+              const rush = !!st.rushNext;
+              st.rushNext = false;
+              spawnEnemy(root, st, def, rush);
+              st.spawnT = st.spawnGap;
+            }
+            const active = st.enemies.some((e: Enemy) => !e.dead || e.dying > 0);
+            if (!st.over && !st.spawnQ.length && !active) {
+              st.betweenWaves = true;
+              st.hold = 'choice';
+              st.waveBreak = 999;
+              st.onNightClear?.({
+                wave: st.wave,
+                kills: st.nightKills || 0,
+                souls: st.nightSouls || 0,
+                lives: st.lives,
+              });
+            }
+          }
+        }
+
+        // Preserve the full simulation; only reduce decoration while a dense mob is
+        // visible. The thresholds have hysteresis through the three stable bands,
+        // avoiding frame-by-frame quality churn around a single enemy count.
+        let nextPerfTier = st.perfTier;
+        if (st.perfTier === 0 && st.enemies.length >= 15) nextPerfTier = 1;
+        else if (st.perfTier === 1 && st.enemies.length >= 25) nextPerfTier = 2;
+        else if (st.perfTier === 1 && st.enemies.length < 13) nextPerfTier = 0;
+        else if (st.perfTier === 2 && st.enemies.length < 23) nextPerfTier = st.enemies.length >= 13 ? 1 : 0;
+        if (nextPerfTier !== st.perfTier) {
+          st.perfTier = nextPerfTier;
+          visualLoadTier = nextPerfTier;
+          particleLimit = nextPerfTier === 2 ? 48 : nextPerfTier === 1 ? 96 : MAX_PARTICLES;
+          // At peak load, retain the already-rendered shadows but stop regenerating
+          // the map for every moving enemy. Restore normally once the pack thins.
+          gl.shadowMap.autoUpdate = nextPerfTier < 2;
+          if (nextPerfTier < 2) gl.shadowMap.needsUpdate = true;
+        }
+
+        // ── enemies march along the winding path ──
+        for (const en of st.enemies) {
+          if (en.dying > 0) { // death-launch animation (corpse flies + shrinks)
+            en.dying -= dt;
+            en.vy -= 16 * dt;
+            en.g.position.y = Math.max(0, en.g.position.y + en.vy * dt);
+            en.g.rotation.z += en.spin * dt;
+            en.g.scale.multiplyScalar(Math.max(0, 1 - dt * 2.4));
+            continue;
+          }
+          if (en.dead) continue;
+          // VENOM poison — drains HP over time even after the urn stops firing
+          if (en.poison > 0) {
+            en.poison -= dt;
+            en.hp -= en.poisonDps * dt;
+            // A CanvasTexture upload per poisoned enemy per frame is disproportionately
+            // expensive on mobile GPUs. Damage still ticks at 60fps; only its tiny UI
+            // representation is sampled at 8fps.
+            en.hpDrawT -= dt;
+            if (en.hpBar && en.hpDrawT <= 0) {
+              drawHpBar(en.hpBar, en.hp / en.maxHp);
+              en.hpDrawT = st.perfTier === 2 ? 0.25 : st.perfTier === 1 ? 0.16 : 0.125;
+            }
+            en.poisonT -= dt;
+            if (en.poisonT <= 0) { splash(fx, en.x, 0.55, en.z, 0x9be83a); en.poisonT = 0.32; }
+            if (en.hp <= 0) { killEnemy(st, en, root); continue; }
+          }
+          let spd = en.spd;
+          if (en.rush) {
+            let covered = false;
+            if (st.towers.length) {
+              for (const tw of st.towers) {
+                const rdx = en.x - tw.x, rdz = en.z - tw.z;
+                if (rdx * rdx + rdz * rdz <= tw.range * tw.range) { covered = true; break; }
+              }
+            }
+            if (covered) en.rush = false;
+            else spd *= st.towers.length ? 3.4 : 1.8;
+          }
+          if (en.slow > 0) { en.slow -= dt; spd *= 0.5; }
+          if (en.hitStop > 0) { en.hitStop -= dt; spd = 0; }  // momentary stagger
+          en.dist += spd * dt;
+          en.phase += dt * spd * 3.2;
+          const p = posAlong(en.dist);
+          en.x = p.x + p.px * en.laneOff;
+          en.z = p.z + p.pz * en.laneOff;
+          const bob = en.def.legs ? Math.abs(Math.sin(en.phase)) * 0.04 : Math.abs(Math.sin(en.phase)) * 0.09;
+          en.g.position.set(en.x, bob, en.z);
+          en.g.rotation.y = Math.atan2(p.dx, p.dz); // face along the path
+          // walk anim
+          if (en.def.legs) {
+            const rig = rigOf(en.g);
+            const sw = Math.sin(en.phase) * 0.5;
+            if (rig?.legL) rig.legL.rotation.x = sw;
+            if (rig?.legR) rig.legR.rotation.x = -sw;
+            if (rig?.armL) rig.armL.rotation.x = -sw * 0.7;
+            if (rig?.armR) rig.armR.rotation.x = sw * 0.7;
+          }
+          if (en.hpBar) en.hpBar.position.set(en.x, 1.5 * en.def.scale * ENEMY_SCALE + 0.9, en.z);
+          // foot dust kicked up as they shamble (bipeds only; ghosts float)
+          if (en.def.legs && en.hitStop <= 0) { en.dustT -= dt; if (en.dustT <= 0) { footDust(fx, en.x, en.z); en.dustT = 0.34; } }
+          // reached the crypt
+          if (en.dist >= PATH_TOTAL) {
+            en.reached = true; en.dead = true;
+            if (isAttract) { continue; } // demo: harmless, no life loss
+            st.lives -= 1; st.houseFlash = 0.5; sfx.reachHouse();
+            if (st.lives <= 0) endGame(st, onGameOver);
+            pushHud(st);
+          }
+        }
+
+        // boss bar — quantize so a poison tick doesn't re-render the HUD every frame
+        let bh = 0, bn = '';
+        for (const en of st.enemies) {
+          if (en.dead || !en.def.boss) continue;
+          const q = Math.ceil(Math.max(0, en.hp / en.maxHp) * 32) / 32;
+          if (q >= bh) { bh = q; bn = familyKey(en.def); }
+        }
+        st.bossHp = bh;
+        st.bossName = bn;
+
+        // ── towers target + fire ──
+        for (const tw of st.towers) {
+          tw.cd -= dt;
+          // brazier flame flicker → restless pool of light
+          tw.flicker += dt * 11;
+          if (tw.light) tw.light.intensity = (5 + tw.level * 1.6) * (0.78 + 0.22 * Math.sin(tw.flicker) + 0.08 * Math.sin(tw.flicker * 2.7));
+          // "can upgrade now" cue — a bobbing gold up-arrow when you can afford it
+          // always show the next-upgrade cost when below the ceiling — BRIGHT + bobbing
+          // when you can afford it, DIMMED + still when you can't (so a cost wall reads
+          // as "needs more souls", never as a broken/locked tower).
+          const notMax = !isAttract && tw.level < TOWER_MAX_LVL;
+          const ringMat = tw.ring.material as THREE.MeshBasicMaterial;
+          if (guestRef.current) {
+            const hot = !isAttract && st.hoverTower === tw;
+            tw.ring.visible = hot;
+            if (hot) {
+              if (!tw.ring.userData.guestRing) {
+                tw.ring.geometry.dispose();
+                tw.ring.geometry = new THREE.CircleGeometry(1, 48);
+                ringMat.map = guestRangeMap();
+                ringMat.color.setHex(0xffffff);
+                ringMat.depthWrite = false;
+                tw.ring.userData.guestRing = 1;
+              }
+              tw.ring.scale.set(tw.range, tw.range, 1);
+              ringMat.opacity = 0.8 + 0.2 * Math.sin(st.time * 3.1);
+              tw.ring.rotation.z += dt * 0.35;
+            }
+          } else {
+            tw.ring.visible = true;
+            ringMat.opacity = !isAttract && st.hoverTower === tw ? 0.55 : 0.16;
+          }
+          tw.upArrow.visible = notMax;
+          if (notMax) {
+            const afford = st.cash >= UPGRADE_COST(tw.level);
+            (tw.upArrow.material as THREE.SpriteMaterial).opacity = afford ? 1 : 0.4;
+            tw.upArrow.position.y = 2.12 + (afford ? Math.sin(st.time * 4 + tw.x) * 0.09 : 0);
+            const p = afford ? 1 + 0.1 * Math.sin(st.time * 6) : 0.78;
+            tw.upArrow.scale.set(0.92 * p, 0.69 * p, 1);
+          }
+          // in-range enemy that is furthest along the path (closest to the crypt)
+          let best: Enemy | null = null; let bestD = -Infinity;
+          for (const en of st.enemies) {
+            if (en.dead) continue;
+            const dx = en.x - tw.x, dz = en.z - tw.z;
+            if (dx * dx + dz * dz <= tw.range * tw.range && en.dist > bestD) { best = en; bestD = en.dist; }
+          }
+          if (best) {
+            const desired = Math.atan2(best.x - tw.x, best.z - tw.z);
+            tw.yaw += angDelta(tw.yaw, desired) * Math.min(1, dt * 14);
+            tw.head.rotation.y = tw.yaw;
+            if (tw.cd <= 0) {
+              tw.cd = 1 / tw.rate;
+              fireWater(fx, st, tw, best);
+              tw.recoil = tw.splash > 0 ? 0.2 : 0.12; // a kick when it shoots
+              const k = TOWER_TYPES[tw.type].head;
+              if (k === 'flame') sfx.fire(); else if (k === 'crystal') sfx.frost();
+              else if (k === 'coil') sfx.storm(); else if (k === 'urn') sfx.plague(); else sfx.mortar();
+            }
+          }
+          // recoil decay — the head kicks back along its aim, then settles
+          if (tw.recoil > 0) tw.recoil = Math.max(0, tw.recoil - dt * 1.4);
+          tw.head.position.set(-Math.sin(tw.yaw) * tw.recoil, tw.headY, -Math.cos(tw.yaw) * tw.recoil);
+        }
+
+        // ── projectiles ──
+        for (const pr of st.projs) {
+          if (pr.arc) {
+            // MORTAR — ballistic lob to the ground spot, then a big splash blast
+            pr.t += dt / pr.flight;
+            if (pr.t >= 1) {
+              splashHit(st, root, pr.ex, pr.ez, pr.splash, pr.dmg, pr.slow);
+              ringPulse(fx, pr.ex, pr.ez, pr.color);
+              splash(fx, pr.ex, 0.4, pr.ez, pr.color); splash(fx, pr.ex, 0.4, pr.ez, pr.color);
+              sfx.boom();
+              pr.x = 1e9;
+            } else {
+              const u = pr.t;
+              pr.x = pr.sx + (pr.ex - pr.sx) * u;
+              pr.z = pr.sz + (pr.ez - pr.sz) * u;
+              pr.y = pr.sy + (pr.ey - pr.sy) * u + pr.arcH * Math.sin(u * Math.PI);
+              pr.g.position.set(pr.x, pr.y, pr.z);
+              pr.g.rotation.x += dt * 9; pr.g.rotation.z += dt * 6; // tumbling shell
+            }
+            continue;
+          }
+          // FIRE / FROST — home in fast on the target
+          const en = pr.target;
+          if (!en.dead) { pr.tx = en.x; pr.tz = en.z; pr.ty = 0.5; }
+          const dx = pr.tx - pr.x, dy = pr.ty - pr.y, dz = pr.tz - pr.z;
+          const d = Math.hypot(dx, dy, dz);
+          const step = 18 * dt;
+          if (d <= step || en.dead) {
+            if (!en.dead) {
+              en.hp -= pr.dmg; en.slow = Math.max(en.slow, pr.slow); hitReact(en, pr.dmg);
+              // VENOM — stamp a poison that keeps ticking the enemy down (refresh, keep strongest)
+              if (pr.dot > 0) { en.poisonDps = Math.max(en.poisonDps, pr.dot); en.poison = Math.max(en.poison, pr.dotTime); }
+              if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
+              if (en.hp <= 0) killEnemy(st, en, root);
+            }
+            // FROST chills a small area — slow (no damage) everyone nearby + a frost ring
+            if (pr.chill > 0) {
+              for (const e of st.enemies) {
+                if (e.dead || e === en) continue;
+                const cx = e.x - pr.x, cz = e.z - pr.z;
+                if (cx * cx + cz * cz <= pr.chill * pr.chill) e.slow = Math.max(e.slow, pr.slow);
+              }
+              ringPulse(fx, pr.x, pr.z, pr.color);
+            }
+            splash(fx, pr.x, 0.4, pr.z, pr.color);
+            pr.x = 1e9;
+          } else {
+            pr.x += (dx / d) * step; pr.y += (dy / d) * step; pr.z += (dz / d) * step;
+            pr.g.position.set(pr.x, pr.y, pr.z);
+            pr.g.lookAt(pr.tx, pr.ty, pr.tz); // orient the icy shard along its flight
+          }
+        }
+        // cull
+        st.projs = st.projs.filter((pr) => {
+          if (pr.x > 1e8) { fx.remove(pr.g); disposeGroup(pr.g); return false; }
+          return true;
+        });
+        st.enemies = st.enemies.filter((en) => {
+          if (en.dead && en.dying <= 0) {
+            if (en.hpBar) { fx.remove(en.hpBar); }
+            root.remove(en.g); disposeGroup(en.g);
+            return false;
+          }
+          return true;
+        });
+
+        pushInspect(st);
+        if (st.bossHp !== st.lastHud.bossHp || st.bossName !== st.lastHud.bossName) pushHud(st);
+        renderFx(fx, dt);
+    }
   });
 
   return null;
@@ -921,6 +1261,36 @@ function makeGravestone(i: number): THREE.Group {
   return g;
 }
 
+function guestRangeMap(): THREE.CanvasTexture {
+  const bag = guestRangeMap as unknown as { tex?: THREE.CanvasTexture };
+  if (bag.tex) return bag.tex;
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const g = c.getContext('2d')!;
+  g.clearRect(0, 0, 256, 256);
+  const fill = g.createRadialGradient(128, 128, 18, 128, 128, 104);
+  fill.addColorStop(0, 'rgba(255, 209, 94, 0.30)');
+  fill.addColorStop(0.62, 'rgba(255, 209, 94, 0.12)');
+  fill.addColorStop(1, 'rgba(255, 209, 94, 0)');
+  g.fillStyle = fill;
+  g.beginPath();
+  g.arc(128, 128, 104, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = 'rgba(255, 209, 94, 0.92)';
+  g.lineWidth = 18;
+  g.lineCap = 'round';
+  g.setLineDash([26, 14]);
+  g.shadowColor = 'rgba(255, 180, 60, 0.85)';
+  g.shadowBlur = 16;
+  g.beginPath();
+  g.arc(128, 128, 92, 0, Math.PI * 2);
+  g.stroke();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  bag.tex = tex;
+  return tex;
+}
+
 function makePlot(x: number, z: number, unlock = 0): Plot {
   // tap target = a tall invisible COLUMN (not a flat disc) so tapping either the
   // ground socket OR the tower that stands on it both register — this is what
@@ -956,7 +1326,16 @@ function makePlot(x: number, z: number, unlock = 0): Plot {
   ghost.add(orb);
   marker.add(ghost);
 
-  return { x, z, disc, marker, ring, ghost, tower: null, unlock, live: unlock <= 0 };
+  const rangeDisc = new THREE.Mesh(
+    new THREE.RingGeometry(2.55, 2.7, 42),
+    new THREE.MeshBasicMaterial({ color: 0xff8a3c, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  rangeDisc.rotation.x = -Math.PI / 2;
+  rangeDisc.position.y = 0.2;
+  rangeDisc.visible = false;
+  marker.add(rangeDisc);
+
+  return { x, z, disc, marker, ring, ghost, rangeDisc, tower: null, unlock, live: unlock <= 0 };
 }
 
 // ─── towers ─────────────────────────────────────────────────────────────────
@@ -988,7 +1367,7 @@ export const TOWER_TYPES: TowerType[] = [
   { id: 'venom', name: 'Plague Urn', cost: 240, color: 0x9be83a, range: 2.9, dmg: 6, rate: 1.1, slow: 0, splash: 0, chillR: 0, head: 'urn', unlock: 8, dot: 16, dotTime: 4, blurb: 'Poison over time' },
 ];
 
-function plantTower(root: THREE.Group, plot: Plot, typeIdx: number): Tower {
+function plantTower(root: THREE.Group, plot: Plot, typeIdx: number, mods: Mods = IDENTITY_MODS): Tower {
   const T = TOWER_TYPES[typeIdx];
   const g = new THREE.Group();
   g.position.set(plot.x, 0, plot.z);
@@ -1028,8 +1407,19 @@ function plantTower(root: THREE.Group, plot: Plot, typeIdx: number): Tower {
     color: T.color, cd: 0, yaw: 0, light, flicker: Math.random() * 6,
     recoil: 0, headY: head.position.y,
   };
-  applyTowerLevel(tw);
+  applyTowerLevel(tw, mods);
   return tw;
+}
+
+/** Level-scaled combat numbers, including in-run and meta multipliers. */
+export function projectStats(typeIdx: number, level: number, mods: Mods = IDENTITY_MODS) {
+  const T = TOWER_TYPES[typeIdx];
+  const L = Math.max(0, level - 1);
+  return {
+    range: (T.range + Math.min(5, L) * 0.26) * mods.range,
+    dmg: Math.round(T.dmg * (1 + L * 0.5) * mods.dmg),
+    rate: T.rate * (1 + Math.min(6, L) * 0.16) * mods.rate,
+  };
 }
 
 function emis(m: THREE.Mesh, color: number, ei: number) {
@@ -1245,14 +1635,15 @@ function drawPips(s: THREE.Sprite, level: number, color: number) {
   ctx.fillStyle = hex; ctx.fillText(label, 64, pillY + pillH / 2 + 1);
   (s as any).__tex.needsUpdate = true;
 }
-function applyTowerLevel(tw: Tower) {
+function applyTowerLevel(tw: Tower, mods: Mods = IDENTITY_MODS) {
   const T = TOWER_TYPES[tw.type];
   const L = tw.level - 1;
   // damage keeps climbing forever (the reason to keep spending); range + fire-rate
   // growth CAP so no single deep tower covers the whole map or fires absurdly fast.
-  tw.range = T.range + Math.min(5, L) * 0.26;
-  tw.dmg = Math.round(T.dmg * (1 + L * 0.5));
-  tw.rate = T.rate * (1 + Math.min(6, L) * 0.16);
+  const stats = projectStats(tw.type, tw.level, mods);
+  tw.range = stats.range;
+  tw.dmg = stats.dmg;
+  tw.rate = stats.rate;
   // STORM arcs to +1 enemy every 2 levels; VENOM poison ticks harder each level
   tw.chain = T.chain ? T.chain + Math.floor(L / 2) : 0;
   tw.chainR = T.chainR || 0;
@@ -1265,13 +1656,13 @@ function applyTowerLevel(tw: Tower) {
   drawPips(tw.pips, tw.level, tw.color);
   drawUpArrow(tw.upArrow, UPGRADE_COST(tw.level), tw.color); // keep the shown cost in sync
 }
-function upgradeTower(tw: Tower) {
+function upgradeTower(tw: Tower, mods: Mods = IDENTITY_MODS) {
   tw.level = Math.min(TOWER_MAX_LVL, tw.level + 1);
-  applyTowerLevel(tw);
+  applyTowerLevel(tw, mods);
 }
 
 // ─── enemies ────────────────────────────────────────────────────────────────
-function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
+function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef, rush = false) {
   const g = def.make();
   const s = ENEMY_SCALE * def.scale;
   g.scale.setScalar(s);
@@ -1289,7 +1680,11 @@ function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
   // gentle early ramp, then a steep quadratic + small cubic tail so the MID-LATE
   // nights really bite (the cubic term is ~0 early, dominant by night 12+).
   const w = st.wave;
-  const hpScaled = Math.round(def.hp * (1 + w * 0.16 + w * w * 0.024 + w * w * w * 0.0007));
+  // Night 1 is a teaching trickle: the same cast, but fragile enough that a
+  // fresh Fire Cannon drops the rusher in two shots.
+  let hpMul = 1 + w * 0.16 + w * w * 0.024 + w * w * w * 0.0007;
+  if (w <= 1) hpMul *= 0.62;
+  const hpScaled = Math.max(1, Math.round(def.hp * hpMul));
   const speedK = 1 + Math.min(0.95, st.wave * 0.042); // the dead get quicker each night
   const en: Enemy = {
     g, def, dist: 0, x, z, laneOff,
@@ -1297,6 +1692,7 @@ function spawnEnemy(root: THREE.Group, st: any, def: IntruderDef) {
     dead: false, reached: false, slow: 0, poison: 0, poisonDps: 0, poisonT: 0, hpBar,
     dying: 0, vy: 0, spin: 0, dustT: Math.random() * 0.3,
     hitFlash: 0, hitStop: 0, flashOn: false, hpDrawT: 0,
+    rush: rush && !def.boss,
   };
   st.enemies.push(en);
 }
@@ -1306,8 +1702,11 @@ function killEnemy(st: any, en: Enemy, _root: THREE.Group) {
   en.dying = 0.5; en.vy = 4.5 + Math.random() * 3; en.spin = (Math.random() - 0.5) * 18;
   if (en.hpBar) { st.fxLayer.remove(en.hpBar); en.hpBar = null; }
   deathBurst(st.fxLayer, en.x, en.z); // matte chunks, no glow ring
-  st.cash += en.def.bounty;
+  const gain = Math.round(en.def.bounty * (st.mods?.bounty || 1));
+  st.cash += gain;
   st.score += 1;
+  st.nightKills = (st.nightKills || 0) + 1;
+  st.nightSouls = (st.nightSouls || 0) + gain;
   sfx.splat();
   if (Math.random() < 0.5) sfx.coin();
   pushHud(st);
@@ -1444,6 +1843,36 @@ function splashHit(st: any, root: THREE.Group, x: number, z: number, radius: num
     }
   }
 }
+/** Guest upgrade juice: more motes, mixed sizes and colours, gravity, fade. */
+function sparkBurst(fx: THREE.Group, x: number, z: number) {
+  const cols = [0xffd15e, 0xff8a2a, 0xfff6c2, 0x7ee7ff, 0xe7e0cb];
+  for (let i = 0, n = particleBudget(18); i < n; i++) {
+    const col = cols[i % cols.length];
+    const r = 0.03 + Math.random() * 0.07;
+    const m = ball(r, col, x, 0.65 + Math.random() * 0.45, z);
+    const mm = m.material as THREE.MeshStandardMaterial;
+    mm.transparent = true;
+    mm.opacity = 1;
+    mm.emissive = new THREE.Color(col);
+    mm.emissiveIntensity = 0.55;
+    m.castShadow = false;
+    fx.add(m);
+    const ang = Math.random() * Math.PI * 2;
+    const sp = 1.4 + Math.random() * 4.4;
+    const life = 0.42 + Math.random() * 0.42;
+    PARTICLES.push({
+      m,
+      vx: Math.sin(ang) * sp,
+      vy: 3.4 + Math.random() * 4.2,
+      vz: Math.cos(ang) * sp,
+      life,
+      life0: life,
+      grav: 11,
+      grow: 0,
+      o0: 1,
+    });
+  }
+}
 // Block-Party-style death burst — MATTE physical chunks (no glow, so it reads as
 // shattering bone/gore, clearly different from the glowing weapon fx)
 function deathBurst(fx: THREE.Group, x: number, z: number) {
@@ -1544,34 +1973,63 @@ function bounce(g: THREE.Object3D) {
 }
 
 // ─── wave director + hud ────────────────────────────────────────────────────
-function startWave(st: any, onWave: (w: number) => void) {
+/** Short family key for the night banner and the boss bar. */
+export function familyKey(def: IntruderDef): string {
+  if (def.id === 'boneTitan') return 'boneTitan';
+  if (def.id === 'direWolf') return 'direWolf';
+  if (def.boss) return 'elite';
+  if (def.id === 'ghost') return 'ghost';
+  if (def.id.includes('skeleton')) return 'skeleton';
+  if (def.id.includes('zombie')) return 'zombie';
+  if (def.id.includes('mummy')) return 'mummy';
+  if (def.id.includes('vampire')) return 'vampire';
+  if (def.id.includes('werewolf')) return 'werewolf';
+  return 'ghoul';
+}
+function lineupOf(queue: IntruderDef[]): { key: string; count: number }[] {
+  const map = new Map<string, number>();
+  for (const d of queue) map.set(familyKey(d), (map.get(familyKey(d)) || 0) + 1);
+  return [...map.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([key, count]) => ({ key, count }));
+}
+
+function planWave(st: any, onWave?: (p: WavePreview) => void) {
   st.wave += 1;
-  st.betweenWaves = false;
-  const pool = poolForWave(st.wave);
-  const count = 6 + Math.round(st.wave * 3.3);              // more dead each night
-  st.spawnGap = Math.max(0.22, 1.0 - st.wave * 0.092);      // and they pour in denser (tighter late floor)
-  st.spawnQ = [];
-  for (let i = 0; i < count; i++) {
-    const def = pool[Math.floor(Math.random() * pool.length)];
-    st.spawnQ.push(def);
+  const w = st.wave as number;
+  const pool = poolForWave(w);
+  st.spawnQ = [] as IntruderDef[];
+  st.rushNext = false;
+  if (w === 1) {
+    // Four fragile ghosts. The first one rushes the weapon the player just placed.
+    st.spawnGap = 0.7;
+    st.spawnT = 0.08;
+    st.spawnQ = [ROSTER[0], ROSTER[0], ROSTER[0], ROSTER[0]];
+    st.rushNext = true;
+  } else {
+    // Nights 2 stays a short step up; night 3+ keeps the original density curve.
+    const count = w < 3 ? 5 + w : 6 + Math.round(w * 3.3);
+    st.spawnGap = w < 3 ? 0.82 : Math.max(0.22, 1.0 - w * 0.092);
+    st.spawnT = 0.28;
+    for (let i = 0; i < count; i++) st.spawnQ.push(pool[Math.floor(Math.random() * pool.length)]);
   }
-  // A boss leads EVERY THIRD night now (3,6,9,12 …) so there's a real threat
-  // early and often. Milestone nights (every 6th) are led by an apex boss; the
-  // others by ELITES — random oversized champions pulled from the whole cast.
-  const isBoss = st.wave % 3 === 0;
+  // A boss leads EVERY THIRD night (3, 6, 9 …) — inside the "every 3–5 nights"
+  // goal, often enough to aim at. Milestone nights (every 6th) are an apex horror;
+  // the others are elites scaled up from the cast.
+  const isBoss = w % 3 === 0;
+  let bossName = '';
   if (isBoss) {
-    const bossCount = 1 + Math.floor(st.wave / 9);          // 1 → 2 by night 9 → 3 by 18 …
+    const bossCount = 1 + Math.floor(w / 9);
     for (let b = 0; b < bossCount; b++) {
-      if (st.wave % 6 === 0 && b === 0) {
-        st.spawnQ.unshift(BOSSES[(st.wave / 6 - 1) % BOSSES.length]); // apex horror leads the milestone
-      } else {
-        const base = pool[Math.floor(Math.random() * pool.length)];
-        st.spawnQ.unshift(eliteFrom(base));                 // any cast member, scaled-up + buffed
-      }
+      let boss: IntruderDef;
+      if (w % 6 === 0 && b === 0) boss = BOSSES[(w / 6 - 1) % BOSSES.length];
+      else boss = eliteFrom(pool[Math.floor(Math.random() * pool.length)]);
+      st.spawnQ.unshift(boss);
+      if (w % 6 === 0 && b === 0) bossName = familyKey(boss);
+      else if (!bossName) bossName = 'elite';
     }
   }
-  // open any new build-plots whose night has arrived — a juicy reveal so the
-  // player sees fresh ground unlock (more room to expand late game)
   for (const p of st.plots) {
     if (!p.live && st.wave >= p.unlock) {
       p.live = true;
@@ -1580,35 +2038,165 @@ function startWave(st: any, onWave: (w: number) => void) {
       sfx.plant();
     }
   }
-  st.spawnT = 0.3;
-  sfx.wave();
-  onWave(st.wave, isBoss);
+  st.nightKills = 0;
+  st.nightSouls = 0;
+  const preview: WavePreview = { wave: w, boss: isBoss, bossName, lineup: lineupOf(st.spawnQ) };
+  (onWave || st.onWaveCb)?.(preview);
   pushHud(st);
+}
+function beginNight(st: any, onWave: (p: WavePreview) => void, delay: number) {
+  if (st.over || st.hold === 'showcase' || st.hold === 'arm' || st.hold === 'fight') return;
+  planWave(st, onWave);
+  st.betweenWaves = true;
+  st.hold = 'arm';
+  st.waveBreak = delay;
+}
+function releaseWave(st: any) {
+  st.betweenWaves = false;
+  st.hold = 'fight';
+  if (st.cmdRef?.current) st.cmdRef.current.start = false;
+  sfx.wave();
+}
+/** Debug / showcase entry — plans the night and releases it immediately. */
+function startWave(st: any, onWave: (p: WavePreview) => void) {
+  planWave(st, onWave);
+  releaseWave(st);
+}
+function applyPerk(st: any, id: string) {
+  const m: Mods = st.mods || { ...IDENTITY_MODS };
+  st.mods = m;
+  if (id === 'haste') m.rate *= 1.15;
+  else if (id === 'sight') m.range *= 1.1;
+  else if (id === 'edge') m.dmg *= 1.12;
+  else if (id === 'tithe') m.bounty *= 1.15;
+  else if (id === 'souls') st.cash += 45;
+  else if (id === 'candle') {
+    st.lives = Math.min(8, st.lives + 1);
+    st.maxLives = Math.max(st.maxLives || st.lives, st.lives);
+  }
+  for (const tw of st.towers) applyTowerLevel(tw, m);
+  st.shownRange = -1;
+  sfx.upgrade();
+  pushHud(st);
+}
+function tryUpgrade(root: THREE.Group, fx: THREE.Group, st: any) {
+  void root;
+  if (st.over || st.hold === 'choice' || st.hold === 'showcase') return;
+  const hovered = st.hoverTower as Tower | null;
+  const candidates = (st.towers as Tower[]).filter((tw) => tw.level < TOWER_MAX_LVL);
+  const order = hovered ? [hovered, ...candidates.filter((t) => t !== hovered)] : [...candidates].reverse();
+  const mods: Mods = st.mods || IDENTITY_MODS;
+  for (const tw of order) {
+    const cost = UPGRADE_COST(tw.level);
+    if (st.cash >= cost && tw.level < TOWER_MAX_LVL) {
+      st.cash -= cost;
+      upgradeTower(tw, mods);
+      st.upgrades = (st.upgrades || 0) + 1;
+      sfx.upgrade();
+      punch(tw.head);
+      deathBurst(fx, tw.x, tw.z);
+      ringPulse(fx, tw.x, tw.z, tw.color);
+      pushHud(st);
+      return;
+    }
+  }
+  const show = hovered || candidates[candidates.length - 1];
+  if (show) {
+    bounce(show.g);
+    sfx.splat();
+    floatCost(fx, show.x, show.z, fmtCost(UPGRADE_COST(show.level)), 0xff5c6b);
+  }
+}
+function consumeCommands(root: THREE.Group, fx: THREE.Group, st: any, onWave: (p: WavePreview) => void) {
+  const cmd = st.cmdRef?.current as GameCommands | undefined;
+  if (!cmd) return;
+  if (cmd.upgrade) {
+    cmd.upgrade = false;
+    tryUpgrade(root, fx, st);
+  }
+  if (cmd.perk) {
+    const id = cmd.perk;
+    cmd.perk = null;
+    if (st.hold === 'choice') {
+      applyPerk(st, id);
+      beginNight(st, onWave, PREP_SECONDS);
+    }
+  }
+}
+function pushInspect(st: any) {
+  const mods: Mods = st.mods || IDENTITY_MODS;
+  const hover = st.hoverTower as Tower | null;
+  let sig: string;
+  let info: InspectInfo;
+  if (hover && hover.level < TOWER_MAX_LVL && st.hold !== 'showcase') {
+    const cur = projectStats(hover.type, hover.level, mods);
+    const nxt = projectStats(hover.type, hover.level + 1, mods);
+    sig = `u${hover.type}:${hover.level}:${cur.dmg}:${st.cash}:${Math.round(mods.dmg * 100)}`;
+    info = {
+      mode: 'upgrade', typeId: TOWER_TYPES[hover.type].id, name: TOWER_TYPES[hover.type].name, level: hover.level,
+      range: cur.range, dmg: cur.dmg, rate: cur.rate,
+      nextRange: nxt.range, nextDmg: nxt.dmg, nextRate: nxt.rate,
+      cost: UPGRADE_COST(hover.level),
+    };
+  } else {
+    const cur = projectStats(st.selectedType, 1, mods);
+    const T = TOWER_TYPES[st.selectedType];
+    sig = `p${st.selectedType}:${Math.round(cur.range * 10)}:${cur.dmg}:${Math.round(mods.range * 100)}`;
+    info = {
+      mode: 'place', typeId: T.id, name: T.name, level: 1,
+      range: cur.range, dmg: cur.dmg, rate: cur.rate,
+      nextRange: cur.range, nextDmg: cur.dmg, nextRate: cur.rate,
+      cost: T.cost,
+    };
+  }
+  if (sig === st.inspectSig) return;
+  st.inspectSig = sig;
+  st.onInspect?.(info);
 }
 function pushHud(st: any) {
   const last = st.lastHud;
   const towers = st.towers.length;
-  if (last.lives !== st.lives || last.cash !== st.cash || last.score !== st.score || last.wave !== st.wave || last.towers !== towers) {
-    st.lastHud = { lives: st.lives, cash: st.cash, score: st.score, wave: st.wave, towers };
+  const bossHp = st.bossHp || 0;
+  const bossName = st.bossName || '';
+  const maxLives = st.maxLives || st.lives;
+  const upgrades = st.upgrades || 0;
+  if (
+    last.lives !== st.lives || last.cash !== st.cash || last.score !== st.score || last.wave !== st.wave
+    || last.towers !== towers || last.bossHp !== bossHp || last.bossName !== bossName
+    || last.maxLives !== maxLives || last.upgrades !== upgrades
+  ) {
+    st.lastHud = { lives: st.lives, cash: st.cash, score: st.score, wave: st.wave, towers, bossHp, bossName, maxLives, upgrades };
     st.onHud?.(st.lastHud);
   }
 }
-function endGame(st: any, onGameOver: (s: number) => void) {
+function endGame(st: any, onGameOver: (s: number, wave: number) => void) {
+  if (st.over) return;
   st.over = true;
+  st.hold = 'over';
   sfx.over();
-  onGameOver(st.score);
+  onGameOver(st.score, st.wave || 1);
 }
 function resetGame(root: THREE.Group, fx: THREE.Group, st: any, onHud: (h: HudState) => void) {
   for (const en of st.enemies) { if (en.hpBar) fx.remove(en.hpBar); root.remove(en.g); disposeGroup(en.g); }
   for (const tw of st.towers) { root.remove(tw.g); disposeGroup(tw.g); }
   for (const pr of st.projs) { fx.remove(pr.g); disposeGroup(pr.g); }
   st.enemies = []; st.towers = []; st.projs = [];
-  for (const p of st.plots) { p.tower = null; p.marker.visible = true; p.live = p.unlock <= 0; }
-  st.lives = START_LIVES; st.cash = START_CASH; st.score = 0; st.wave = 0;
-  st.spawnQ = []; st.betweenWaves = true; st.waveBreak = 3.5; st.over = false; // longer first breather to place a tower
+  for (const p of st.plots) { p.tower = null; p.marker.visible = true; p.rangeDisc.visible = false; p.live = p.unlock <= 0; }
+  const mods: Mods = { dmg: damageMul(), rate: 1, range: 1, bounty: 1 };
+  st.mods = mods;
+  st.lives = startingLives();
+  st.cash = startingCash();
+  st.maxLives = st.lives;
+  st.score = 0; st.wave = 0; st.upgrades = 0;
+  st.spawnQ = []; st.betweenWaves = true; st.hold = 'wait'; st.waveBreak = 999; st.over = false;
+  st.idleArm = 0; st.nightKills = 0; st.nightSouls = 0; st.rushNext = false; st.simAcc = 0;
+  st.bossHp = 0; st.bossName = ''; st.shownRange = -1; st.inspectSig = '';
+  st.hoverPlot = null; st.hoverTower = null;
   st.demoReady = false; st.attractT = 0;
-  st.lastHud = { lives: -1, cash: -1, score: -1, wave: -1, towers: -1 };
+  st.lastHud = { lives: -1, cash: -1, score: -1, wave: -1, towers: -1, bossHp: -1, bossName: '', maxLives: -1, upgrades: -1 };
   st.onHud = onHud;
+  const cmd = st.cmdRef?.current as GameCommands | undefined;
+  if (cmd) { cmd.perk = null; cmd.start = false; cmd.upgrade = false; }
   pushHud(st);
 }
 function angDelta(a: number, b: number) {
@@ -1725,7 +2313,7 @@ function Lights() {
 // At the heaviest crowd density, composition remains readable without bloom and
 // vignette. Those full-screen passes return automatically as the field clears;
 // this never changes player input, enemy behavior, or wave timing.
-function PerformanceEffects() {
+function PerformanceEffects({ desk }: { desk: boolean }) {
   const [reduced, setReduced] = useState(false);
   const previousTier = useRef(-1);
   useFrame(() => {
@@ -1738,7 +2326,9 @@ function PerformanceEffects() {
       {/* no mipmapBlur — it produces rainbow chroma noise in dark areas on mobile
           half-float buffers. Higher threshold keeps the dark ground out of bloom. */}
       <Bloom intensity={0.7} luminanceThreshold={0.62} luminanceSmoothing={0.25} />
-      <Vignette eskil={false} offset={0.2} darkness={0.62} />
+      {/* Landscape guest: a light edge so the side rails don't read as letterboxing.
+          Phone / host keeps the original heavier vignette. */}
+      <Vignette eskil={false} offset={desk ? 0.42 : 0.2} darkness={desk ? 0.38 : 0.62} />
     </EffectComposer>
   );
 }
@@ -1766,7 +2356,7 @@ export default function Scene(props: Props) {
     >
       <Lights />
       <World {...props} />
-      <PerformanceEffects />
+      <PerformanceEffects desk={!!props.desk} />
     </Canvas>
   );
 }
