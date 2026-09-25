@@ -27,7 +27,11 @@ The Pages workflow publishes this guest build next to the root site, without rep
 
 https://yinxinghuan.github.io/get-off-my-lawn/crazygames/
 
-Progress sync through the Crazy Games SDK Data module is not wired up. Local best score is enough for this version.
+Progress sync through the Crazy Games SDK Data module is not wired up. Local best score is enough for this version. Grave shards, the furthest night, and the permanent ranks (candle, purse, edge) stay in the same on-device storage.
+
+## Audio
+
+Music and sound effects are synthesized in the browser. There are no sampled recordings. See `doc/audio.md`.
 
 ## Build the upload package
 
