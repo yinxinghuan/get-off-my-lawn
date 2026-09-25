@@ -62,7 +62,8 @@ const prefs = readPrefs();
 let muted = prefs.muted;
 let volume = prefs.volume;
 let armed = false;
-let battleHeard = false;
+let leftTitle = false;
+let combat = false;
 let wanted: Wanted = 'off';
 
 let ctx: AudioContext | null = null;
@@ -71,6 +72,7 @@ let sfxBus: GainNode | null = null;
 let musicBus: GainNode | null = null;
 
 const buffers = new Map<string, AudioBuffer>();
+const rawBytes = new Map<string, Promise<ArrayBuffer | null>>();
 let preparing: Promise<void> | null = null;
 let pendingSting: StingId | null = null;
 
@@ -133,16 +135,19 @@ function applyMaster() {
   master.gain.linearRampToValueAtTime(v, now + 0.03);
 }
 
+function prefetch() {
+  for (const [id, url] of Object.entries(URLS)) {
+    rawBytes.set(id, fetch(url).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null));
+  }
+}
+
 function prepare(c: AudioContext): Promise<void> {
   if (!preparing) {
-    preparing = Promise.all(Object.entries(URLS).map(async ([id, url]) => {
+    preparing = Promise.all([...rawBytes.entries()].map(async ([id, pending]) => {
       try {
-        const res = await fetch(url);
-        if (!res.ok) return;
-        const bytes = await res.arrayBuffer();
-        if (!bytes.byteLength) return;
-        const audio = await c.decodeAudioData(bytes.slice(0));
-        buffers.set(id, audio);
+        const bytes = await pending;
+        if (!bytes?.byteLength) return;
+        buffers.set(id, await c.decodeAudioData(bytes.slice(0)));
       } catch { /* a missing cue must not break the match */ }
     })).then(() => undefined);
   }
@@ -311,31 +316,44 @@ export function setVolume(v: number) {
 
 export function getVolume() { return volume; }
 
+function beginBed(id: BedId, reset: boolean) {
+  if (!armed || muted || volume <= 0 || document.hidden) {
+    if (bedSource) pauseBed();
+    return;
+  }
+  if (!reset && bedPlaying === id && bedSource) {
+    rampBed();
+    return;
+  }
+  if (reset) bedOffset = 0;
+  startBed(id, bedOffset);
+}
+
 export function setMusic(mode: 'off' | 'night' | 'boss') {
-  if (mode === 'night' || mode === 'boss') {
-    battleHeard = true;
+  if (mode === 'boss' || (mode === 'night' && combat)) {
+    leftTitle = true;
     if (stingKind === 'over') stopSting(false);
     const changed = wanted !== mode;
     wanted = mode;
-    if (changed) bedOffset = 0;
-    if (!armed || muted || volume <= 0 || document.hidden) {
-      if (bedSource) pauseBed();
-      return;
-    }
-    if (!changed && bedPlaying === mode && bedSource) {
-      rampBed();
-      return;
-    }
-    startBed(mode, bedOffset);
+    beginBed(mode, changed);
     return;
   }
-  if (!battleHeard) {
+  if (mode === 'night') {
+    // Click to Defend (and the pre-march) keep the title loop until the night steps off.
+    leftTitle = true;
+    const changed = wanted !== 'menu';
+    wanted = 'menu';
+    beginBed('menu', changed);
+    return;
+  }
+  if (!leftTitle) {
     const changed = wanted !== 'menu';
     wanted = 'menu';
     if (!changed && bedPlaying === 'menu' && bedSource) return;
     if (armed && !muted && volume > 0 && !document.hidden) startBed('menu', changed ? 0 : bedOffset);
     return;
   }
+  combat = false;
   wanted = 'off';
   stopBedNodes(0.15);
 }
@@ -386,6 +404,11 @@ export const sfx = {
     tone(440, 0.1, 'triangle', 0.14);
     setTimeout(() => tone(660, 0.14, 'triangle', 0.14), 90);
     stopSting(true);
+    combat = true;
+    if (wanted === 'menu') {
+      wanted = 'night';
+      beginBed('night', true);
+    }
   },
   over() { playSting('over'); },
   coin() { tone(880, 0.05, 'square', 0.08); setTimeout(() => tone(1320, 0.06, 'square', 0.07), 45); },
@@ -401,5 +424,6 @@ function onVisibility() {
   syncBed();
 }
 
+prefetch();
 window.addEventListener('pointerdown', () => { unlockAudio(); });
 document.addEventListener('visibilitychange', onVisibility);

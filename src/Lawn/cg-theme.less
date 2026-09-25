@@ -123,6 +123,11 @@
     letter-spacing: 0.02em;
     color: #f7f1e6;
   }
+  .gol-card-name {
+    word-break: normal;
+    overflow-wrap: normal;
+    hyphens: none;
+  }
   .gol-coming-line,
   .gol-offer > span:not(.gol-offer-key),
   .gol-plate span,
@@ -807,10 +812,41 @@
     height: 40px;
     border-radius: @r;
   }
+  .gol-card {
+    padding: 4px 6px;
+    gap: 4px;
+  }
+  .gol-card-key {
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+  }
+  .gol-card-ico {
+    width: 22px;
+    height: 22px;
+    flex-basis: 22px;
+    svg { width: 22px; height: 22px; }
+  }
+  .gol-card-name {
+    display: block;
+    font-size: 13px;
+    line-height: 1.15;
+    letter-spacing: 0;
+  }
+  @media (min-width: 1100px) {
+    .gol-card-name { font-size: 15px; }
+    .gol-card-ico {
+      width: 26px;
+      height: 26px;
+      flex-basis: 26px;
+      svg { width: 26px; height: 26px; }
+    }
+  }
+  // Thumb is 14px and draws past the input ends. Inset it inside the tray padding.
   .gol-vol {
-    right: @s3;
+    right: calc(@s3 + 10px);
     bottom: 6px;
-    width: calc(var(--rail-r) - 24px);
+    width: calc(var(--rail-r) - @s5 - 20px);
     height: 18px;
   }
   .gol-toasts {
