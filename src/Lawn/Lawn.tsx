@@ -16,7 +16,7 @@ import {
 } from './meta';
 import { deskRails, isGuestDesk, type DeskRails } from './desk';
 import { Coach, type TutorStep } from './Coach';
-import { clearTutorial, markTutorialDone, tutorialDone } from './tutorial';
+import { clearTutorial, markSteps, markTutorialDone, seenSteps, tutorialDone } from './tutorial';
 import './Lawn.less';
 
 const POSTER_URL = 'https://yinxinghuan.github.io/games/posters/get-off-my-lawn.png';
@@ -160,6 +160,8 @@ export function Lawn() {
   const commands = useRef<GameCommands>({ perk: null, start: false, upgrade: false, speed: 1, coach: false, coachHold: false });
   const [tutor, setTutor] = useState<TutorStep | null>(null);
   const [spots, setSpots] = useState<CoachSpots | null>(null);
+  // What the quiet 'wait' step should surface next. A night-1 death keeps place/start taught.
+  const lesson = useRef<'upgrade' | 'speed' | 'perk'>('upgrade');
   commands.current.speed = speed;
 
   const bannerTimer = useRef<number | undefined>(undefined);
@@ -250,10 +252,14 @@ export function Lawn() {
     setRanks(getRanks());
     setChoice(null);
     setArming(false);
+    if (guest && tutor && !tutorialDone() && wave >= 1) {
+      markSteps(['place', 'march']);
+      if (tutor === 'speed' || tutor === 'perk' || lesson.current === 'perk') markSteps(['upgrade', 'speed']);
+    }
     submitScore(score).catch(() => {});
     sendBeatNotify(score);
     setPhase('over');
-  }, [submitScore, sendBeatNotify]);
+  }, [submitScore, sendBeatNotify, guest, tutor]);
   const registerRestart = useCallback((_fn: () => void) => { /* scene resets itself when mode returns to play */ }, []);
 
   const resetRunChrome = () => {
@@ -278,10 +284,31 @@ export function Lawn() {
     if (replay) clearTutorial();
     if (fromAttract) { unlockAudio(); setMusic('night'); }
     resetRunChrome();
-    const run = guest && (replay || !tutorialDone());
-    commands.current.coach = run;
-    commands.current.coachHold = run;
-    setTutor(run ? 'place' : null);
+    let step: TutorStep | null = null;
+    if (guest && (replay || !tutorialDone())) {
+      if (replay) {
+        lesson.current = 'upgrade';
+        step = 'place';
+      } else {
+        const seen = seenSteps();
+        if (!seen.has('place') || !seen.has('march')) {
+          lesson.current = 'upgrade';
+          step = 'place';
+        } else if (!seen.has('upgrade')) {
+          lesson.current = 'upgrade';
+          step = 'wait';
+        } else if (!seen.has('speed')) {
+          lesson.current = 'speed';
+          step = 'wait';
+        } else {
+          lesson.current = 'perk';
+          step = 'wait';
+        }
+      }
+    }
+    commands.current.coach = step != null;
+    commands.current.coachHold = step === 'place';
+    setTutor(step);
     setSpots(null);
     setPhase('playing');
   };
@@ -364,26 +391,37 @@ export function Lawn() {
 
   useEffect(() => {
     if (!guest || phase !== 'playing' || !tutor) return;
-    if (tutor === 'place' && hud.towers >= 1) { setTutor('march'); return; }
+    if (tutor === 'place' && hud.towers >= 1) { markSteps(['place']); setTutor('march'); return; }
     if (tutor === 'march' && spots?.hold === 'fight') {
-      setTutor(hud.upgrades > 0 ? 'speed' : hud.cash >= UPGRADE_COST(1) ? 'upgrade' : 'wait');
+      markSteps(['place', 'march']);
+      if (hud.upgrades > 0) { lesson.current = 'speed'; setTutor('speed'); }
+      else {
+        lesson.current = 'upgrade';
+        setTutor(hud.cash >= UPGRADE_COST(1) ? 'upgrade' : 'wait');
+      }
       return;
     }
-    if (
-      tutor === 'wait' && !choice && hud.upgrades === 0 && hud.towers >= 1
-      && hud.cash >= UPGRADE_COST(1) && spots?.hold === 'fight'
-    ) {
-      setTutor('upgrade');
+    if (tutor === 'wait' && !choice && spots?.hold === 'fight') {
+      if (lesson.current === 'speed') { setTutor('speed'); return; }
+      if (lesson.current === 'upgrade' && hud.upgrades === 0 && hud.towers >= 1 && hud.cash >= UPGRADE_COST(1)) {
+        setTutor('upgrade');
+        return;
+      }
+    }
+    if (tutor === 'upgrade' && hud.upgrades > 0) {
+      markSteps(['upgrade']);
+      lesson.current = 'speed';
+      setTutor('speed');
       return;
     }
-    if (tutor === 'upgrade' && hud.upgrades > 0) { setTutor('speed'); return; }
-    if (choice && tutor !== 'perk') { setTutor('perk'); }
+    if (choice && tutor !== 'perk') { lesson.current = 'perk'; setTutor('perk'); }
   }, [guest, phase, tutor, hud.towers, hud.upgrades, hud.cash, spots?.hold, choice]);
 
   useEffect(() => {
     if (tutor !== 'speed') return;
-    if (speed === 2) { setTutor('wait'); return; }
-    const id = window.setTimeout(() => setTutor('wait'), 4200);
+    const finish = () => { markSteps(['speed']); lesson.current = 'perk'; setTutor('wait'); };
+    if (speed === 2) { finish(); return; }
+    const id = window.setTimeout(finish, 4200);
     return () => window.clearTimeout(id);
   }, [tutor, speed]);
 

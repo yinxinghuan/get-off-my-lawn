@@ -60,10 +60,10 @@
   100% { transform: none; opacity: 1; }
 }
 @keyframes gol-cg-banner {
-  0% { transform: translateY(-8px) scale(0.92); opacity: 0; }
-  16% { transform: none; opacity: 1; }
-  78% { opacity: 1; }
-  100% { transform: translateY(-4px); opacity: 0; }
+  0% { transform: translateY(-8px); opacity: 0; }
+  14% { transform: translateY(0); opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateY(-6px); opacity: 0; }
 }
 @keyframes gol-cg-pop {
   from { transform: translateY(6px); opacity: 0; }
@@ -250,6 +250,7 @@
     right: @s4;
     display: flex;
     justify-content: center;
+    align-items: center;
     pointer-events: none;
   }
   .gol-toasts .gol-wavebanner,
@@ -267,18 +268,62 @@
     animation: gol-cg-pop 220ms @ease;
   }
   .gol-toasts .gol-wavebanner {
-    animation: gol-cg-banner 2.6s ease forwards;
-    font-size: clamp(36px, 4vw, 52px);
-    filter: drop-shadow(2px 3px 0 @inkline);
-    &::before {
-      content: '';
-      position: absolute;
-      z-index: -1;
-      inset: -@s2 -@s5 -@s1;
-      background: linear-gradient(180deg, @pump, #c2410c);
-      border: @line-strong solid @inkline;
-      border-radius: @r-sm;
-      box-shadow: @shadow;
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: @s2;
+    width: max-content;
+    max-width: min(440px, 100%);
+    margin: 0 auto;
+    padding: 8px 18px 9px;
+    font-family: @cg-body;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    line-height: 1;
+    white-space: nowrap;
+    text-transform: uppercase;
+    color: @inkline;
+    background: linear-gradient(180deg, #ffe08a, @pump 58%, #c2410c);
+    background-clip: padding-box;
+    -webkit-background-clip: padding-box;
+    -webkit-text-fill-color: @inkline;
+    border: @line-strong solid @inkline;
+    border-radius: @r-sm;
+    box-shadow: @shadow;
+    filter: none;
+    animation: gol-cg-banner 2.6s @ease forwards;
+    &::before { content: none; }
+    > span:not(.gol-lineup):not(.gol-bosswarn) {
+      font-family: @cg-body;
+      font-size: 12px;
+      line-height: 1;
+    }
+    .gol-lineup {
+      font-family: @cg-display;
+      font-size: 28px;
+      font-weight: 400;
+      letter-spacing: 0.03em;
+      line-height: 1;
+      text-transform: uppercase;
+      color: @inkline;
+      -webkit-text-fill-color: @inkline;
+      background: none;
+    }
+    .gol-bosswarn {
+      font-family: @cg-body;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      line-height: 1;
+      color: @inkline;
+      -webkit-text-fill-color: @inkline;
+      -webkit-text-stroke: 0;
+      filter: none;
+    }
+    &--boss {
+      background: linear-gradient(180deg, #ffd0d4, #ff5c6b 55%, #b8323e);
+      -webkit-text-fill-color: @inkline;
     }
   }
   .gol-toasts .gol-hint,
