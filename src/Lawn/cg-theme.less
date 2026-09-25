@@ -444,6 +444,163 @@
     animation: gol-pulse 1.4s ease-in-out infinite;
   }
   .gol-stone-glow { animation: gol-stone-glow 2.8s ease-in-out infinite; }
+
+  .gol-coach { position: absolute; inset: 0; z-index: 9; pointer-events: none; }
+  .gol-coach-dim { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .gol-coach-ring {
+    position: absolute;
+    width: 92px;
+    height: 92px;
+    margin: -46px 0 0 -46px;
+    border: 3px dashed @gold;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 14px rgba(255, 209, 94, 0.16), 0 0 16px rgba(255, 209, 94, 0.45);
+    pointer-events: none;
+    animation: gol-coach-ring 1.2s @ease infinite;
+  }
+  .gol-coach-pin {
+    position: absolute;
+    z-index: 2;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+    em {
+      position: absolute;
+      left: 0;
+      top: 10px;
+      transform: translateX(-50%);
+      max-width: 140px;
+      font-family: @cg-body;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      text-align: center;
+      color: @gold;
+      text-shadow: 0 2px 0 @inkline;
+      white-space: normal;
+      &.is-side { left: 42px; top: -14px; transform: none; text-align: left; }
+    }
+  }
+  .gol-coach-bob {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    animation: gol-coach-bob 0.9s @ease infinite;
+    svg { position: absolute; left: 0; bottom: 0; transform-origin: center bottom; overflow: visible; }
+  }
+  .gol-coach-card {
+    position: absolute;
+    z-index: 3;
+    left: @s4;
+    right: 120px;
+    bottom: calc(env(safe-area-inset-bottom) + 196px);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: @s2;
+    padding: @s3 @s4;
+    pointer-events: none;
+    .cg-panel();
+    b {
+      font-family: @cg-body;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      line-height: 1.25;
+      color: #f7f1e6;
+      white-space: normal;
+    }
+    > span {
+      font-family: @cg-body;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: @mute;
+    }
+  }
+  .gol-coach-skip {
+    pointer-events: auto;
+    margin-top: @s1;
+    padding: 2px @s3;
+    background: transparent;
+    color: @mute;
+    border: @line solid #3a2a22;
+    border-radius: @r-sm;
+    font-family: @cg-body;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    touch-action: none;
+    &:hover { color: #f7f1e6; }
+    &:active { transform: translateY(1px) scale(0.98); }
+  }
+  .gol-coach-perk-arrow {
+    width: 0;
+    height: 0;
+    margin: 0 auto @s2;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-top: 14px solid @gold;
+    filter: drop-shadow(0 2px 0 @inkline);
+    animation: gol-coach-bob 0.9s @ease infinite;
+  }
+  .gol-coach-perk {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: @s3;
+    margin: 0 0 @s2;
+    b {
+      font-family: @cg-body;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      color: #f7f1e6;
+      white-space: normal;
+    }
+  }
+  .gol-card--coach { animation: gol-coach-pulse 1.1s @ease infinite; }
+  .gol-lives--coach { filter: drop-shadow(0 0 8px rgba(255, 209, 94, 0.85)); }
+  .gol-arm--coach { box-shadow: 0 0 0 2px @gold, @shadow; }
+  .gol-offer--coach { box-shadow: 0 0 0 2px @gold, @shadow; }
+  .gol-tutor-replay {
+    margin-top: @s2;
+    padding: @s1 @s3;
+    background: transparent;
+    color: @mute;
+    border: @line solid #3a2a22;
+    border-radius: @r-sm;
+    font-family: @cg-body;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    touch-action: none;
+    white-space: normal;
+    &:hover { color: #f7f1e6; }
+  }
+}
+
+@keyframes gol-coach-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(7px); }
+}
+@keyframes gol-coach-ring {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+@keyframes gol-coach-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px @gold, @shadow; }
+  50% { box-shadow: 0 0 0 3px @gold, 0 0 14px rgba(255, 209, 94, 0.55), @shadow; }
 }
 
 .gol.gol--cg.gol--desk {
@@ -591,4 +748,11 @@
   }
   .gol-speed:hover,
   .gol-mute:hover { border-color: @inkline; }
+  .gol-coach-card {
+    left: calc(var(--rail-l) + @s4);
+    right: auto;
+    bottom: 148px;
+    width: min(420px, calc(100% - var(--rail-l) - var(--rail-r) - 48px));
+    transform: none;
+  }
 }

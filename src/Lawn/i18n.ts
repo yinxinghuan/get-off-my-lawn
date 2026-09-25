@@ -99,6 +99,22 @@ const STR = {
   boneTitan:  { en: 'Bone Titan', zh: '骨巨灵' },
   direWolf:   { en: 'Dire Wolf', zh: '恐狼' },
   speedLabel: { en: 'Speed', zh: '倍速' },
+  tutorPlace: { en: 'Click a weapon, then click a glowing socket', zh: '先点武器，再点发光的台座' },
+  tutorPlaceTap: { en: 'Tap a weapon, then tap a glowing socket', zh: '先点武器，再点发光的台座' },
+  tutorKeys: { en: 'Keys 1–5', zh: '按键 1–5' },
+  tutorMarch: { en: 'Ghosts come in from the gate. Candles are lives.', zh: '亡灵从门口进来。蜡烛就是命。' },
+  tutorMarchSub: { en: 'Space, or the button, starts the night', zh: '空格或按钮，开始这一夜' },
+  tutorMarchTap: { en: 'Tap the button to start the night', zh: '点按钮开始这一夜' },
+  tutorUpgrade: { en: 'Click the weapon you placed, then upgrade', zh: '点放下的武器，再升级' },
+  tutorUpgradeTap: { en: 'Tap the weapon you placed, then upgrade', zh: '点放下的武器，再升级' },
+  tutorUpgradeSub: { en: 'Key U', zh: '按 U' },
+  tutorSpeed: { en: 'F plays the night at 2×', zh: '按 F，这一夜按 2 倍速走' },
+  tutorPerk: { en: 'Pick one of three. It lasts this defence.', zh: '三选一，本局一直生效。' },
+  tutorSkip: { en: 'Skip', zh: '跳过' },
+  tutorReplay: { en: 'Replay tutorial', zh: '再看教程' },
+  tutorBegin: { en: 'Start the night', zh: '开始这一夜' },
+  tutorSpawn: { en: 'They enter here', zh: '从这里进来' },
+  tutorLives: { en: 'Lives', zh: '生命' },
 } as const;
 
 export type StrKey = keyof typeof STR;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Scene, {
-  PREP_SECONDS, TOWER_TYPES, projectStats,
-  type GameCommands, type HudState, type InspectInfo, type NightReport, type WavePreview,
+  PREP_SECONDS, TOWER_TYPES, UPGRADE_COST, projectStats,
+  type CoachSpots, type GameCommands, type HudState, type InspectInfo, type NightReport, type WavePreview,
 } from './Scene';
 import { Leaderboard, useGameScore } from '@shared/leaderboard';
 import type { LeaderboardEntry } from '@shared/leaderboard';
@@ -15,6 +15,8 @@ import {
   type MetaRanks, type RunAward,
 } from './meta';
 import { deskRails, isGuestDesk, type DeskRails } from './desk';
+import { Coach, type TutorStep } from './Coach';
+import { clearTutorial, markTutorialDone, tutorialDone } from './tutorial';
 import './Lawn.less';
 
 const POSTER_URL = 'https://yinxinghuan.github.io/games/posters/get-off-my-lawn.png';
@@ -155,7 +157,9 @@ export function Lawn() {
   offersRef.current = offers;
   const lastWave = useRef(0);
   const hintOnce = useRef(false);
-  const commands = useRef<GameCommands>({ perk: null, start: false, upgrade: false, speed: 1 });
+  const commands = useRef<GameCommands>({ perk: null, start: false, upgrade: false, speed: 1, coach: false, coachHold: false });
+  const [tutor, setTutor] = useState<TutorStep | null>(null);
+  const [spots, setSpots] = useState<CoachSpots | null>(null);
   commands.current.speed = speed;
 
   const bannerTimer = useRef<number | undefined>(undefined);
@@ -264,12 +268,34 @@ export function Lawn() {
     commands.current.perk = null;
     commands.current.start = false;
     commands.current.upgrade = false;
+    commands.current.coach = false;
+    commands.current.coachHold = false;
     lastWave.current = 0;
     submittedBest.current = 0;
     lastSubmitT.current = 0;
   };
-  const startGame = () => { unlockAudio(); setMusic('night'); resetRunChrome(); setPhase('playing'); };
-  const again = () => { resetRunChrome(); setPhase('playing'); };
+  const openPlay = (replay: boolean, fromAttract: boolean) => {
+    if (replay) clearTutorial();
+    if (fromAttract) { unlockAudio(); setMusic('night'); }
+    resetRunChrome();
+    const run = guest && (replay || !tutorialDone());
+    commands.current.coach = run;
+    commands.current.coachHold = run;
+    setTutor(run ? 'place' : null);
+    setSpots(null);
+    setPhase('playing');
+  };
+  const startGame = () => openPlay(false, true);
+  const again = () => openPlay(false, false);
+  const replayTutorial = () => openPlay(true, phase === 'attract');
+  const skipTutor = () => {
+    markTutorialDone();
+    commands.current.coach = false;
+    commands.current.coachHold = false;
+    if (tutor === 'march') commands.current.start = true;
+    setTutor(null);
+  };
+  const onCoach = useCallback((next: CoachSpots) => setSpots(next), []);
   const toggleMute = () => { const m = !muted; setMuted(m); setMutedState(m); };
   const toggleSpeed = () => setSpeed((s) => (s === 1 ? 2 : 1));
   const pickPerk = (id: string) => {
@@ -301,10 +327,11 @@ export function Lawn() {
   // which left the hint on screen for the whole night.
   useEffect(() => {
     if (phase !== 'playing') { hintOnce.current = false; setUpgradeHint(false); return; }
+    if (tutor) { hintOnce.current = true; setUpgradeHint(false); return; }
     if (hintOnce.current || hud.towers < 1) return;
     hintOnce.current = true;
     setUpgradeHint(true);
-  }, [phase, hud.towers]);
+  }, [phase, hud.towers, tutor]);
   useEffect(() => {
     if (!upgradeHint) return;
     if (hud.upgrades > 0 || hud.wave >= 2 || choice) { setUpgradeHint(false); return; }
@@ -328,6 +355,43 @@ export function Lawn() {
     const id = window.setTimeout(() => setUnlockToast(null), 3200);
     return () => window.clearTimeout(id);
   }, [unlockToast, waveBanner, guest]);
+
+  useEffect(() => {
+    if (!guest) return;
+    commands.current.coach = tutor != null && tutor !== 'perk';
+    commands.current.coachHold = tutor === 'place' || tutor === 'march';
+  }, [guest, tutor]);
+
+  useEffect(() => {
+    if (!guest || phase !== 'playing' || !tutor) return;
+    if (tutor === 'place' && hud.towers >= 1) { setTutor('march'); return; }
+    if (tutor === 'march' && spots?.hold === 'fight') {
+      setTutor(hud.upgrades > 0 ? 'speed' : hud.cash >= UPGRADE_COST(1) ? 'upgrade' : 'wait');
+      return;
+    }
+    if (
+      tutor === 'wait' && !choice && hud.upgrades === 0 && hud.towers >= 1
+      && hud.cash >= UPGRADE_COST(1) && spots?.hold === 'fight'
+    ) {
+      setTutor('upgrade');
+      return;
+    }
+    if (tutor === 'upgrade' && hud.upgrades > 0) { setTutor('speed'); return; }
+    if (choice && tutor !== 'perk') { setTutor('perk'); }
+  }, [guest, phase, tutor, hud.towers, hud.upgrades, hud.cash, spots?.hold, choice]);
+
+  useEffect(() => {
+    if (tutor !== 'speed') return;
+    if (speed === 2) { setTutor('wait'); return; }
+    const id = window.setTimeout(() => setTutor('wait'), 4200);
+    return () => window.clearTimeout(id);
+  }, [tutor, speed]);
+
+  useEffect(() => {
+    if (tutor !== 'perk' || choice) return;
+    markTutorialDone();
+    setTutor(null);
+  }, [tutor, choice]);
 
   useEffect(() => {
     if (phase !== 'playing') return;
@@ -400,6 +464,7 @@ export function Lawn() {
         onGameOver={onGameOver}
         registerRestart={registerRestart}
         commands={commands}
+        onCoach={guest ? onCoach : undefined}
         desk={desk}
         rails={rails}
         guest={guest}
@@ -408,7 +473,7 @@ export function Lawn() {
       {phase === 'playing' && (
         <>
           <div className="gol-rail">
-          <div className="gol-hud gol-lives">
+          <div className={`gol-hud gol-lives${tutor === 'march' ? ' gol-lives--coach' : ''}`}>
             {Array.from({ length: candleSlots }, (_, i) => <Candle key={i} lit={i < hud.lives} />)}
           </div>
           {champPill('gol-champ--play')}
@@ -473,7 +538,7 @@ export function Lawn() {
           </div>
           </div>
 
-          {hud.wave < 2 && !choice && (
+          {hud.wave < 2 && !choice && !tutor && (
             <div className="gol-keystrip">
               <span><kbd>1-5</kbd> {t('keyWeapons')}</span>
               <span><kbd>U</kbd> {t('keyUpgrade')}</span>
@@ -482,7 +547,7 @@ export function Lawn() {
             </div>
           )}
 
-          {hud.towers === 0 && !choice && (
+          {hud.towers === 0 && !choice && !tutor && (
             <div className="gol-guide">
               <div className="gol-finger"><Finger /></div>
               {hud.cash >= sel.cost
@@ -513,7 +578,7 @@ export function Lawn() {
               return (
                 <button
                   key={tw.id}
-                  className={`gol-card${i === selectedType ? ' gol-card--sel' : ''}${affordable ? '' : ' gol-card--poor'}`}
+                  className={`gol-card${i === selectedType ? ' gol-card--sel' : ''}${affordable ? '' : ' gol-card--poor'}${guest && tutor === 'place' && i === 0 ? ' gol-card--coach' : ''}`}
                   onPointerDown={(e) => { e.stopPropagation(); setSelectedType(i); }}
                 >
                   <span className="gol-card-key">{i + 1}</span>
@@ -544,7 +609,7 @@ export function Lawn() {
         </>
       )}
 
-      {guest && phase === 'playing' && !choice && (waveBanner != null || unlockToast || upgradeHint) && (
+      {guest && phase === 'playing' && !choice && (waveBanner != null || (!tutor && (unlockToast || upgradeHint))) && (
         <div className="gol-toasts">
           {waveBanner != null ? (
             <div className={`gol-wavebanner${bossBanner ? ' gol-wavebanner--boss' : ''}`} key={waveBanner}>
@@ -581,9 +646,9 @@ export function Lawn() {
           )}
         </div>
       )}
-      {arming && phase === 'playing' && !choice && (
-        <button className="gol-arm" onPointerDown={(e) => { e.stopPropagation(); requestStart(); }}>
-          {t('beginNight')}
+      {(arming || tutor === 'march') && phase === 'playing' && !choice && (
+        <button className={`gol-arm${tutor === 'march' ? ' gol-arm--coach' : ''}`} onPointerDown={(e) => { e.stopPropagation(); requestStart(); }}>
+          {tutor === 'march' ? t('tutorBegin') : t('beginNight')}
         </button>
       )}
 
@@ -621,9 +686,16 @@ export function Lawn() {
               <span><b>{choice.lives}</b> {t('nightCandles')}</span>
             </div>
             <div className="gol-choice-h">{guest ? t('takePrize') : t('chooseOne')}</div>
+            {tutor === 'perk' && (
+              <div className="gol-coach-perk">
+                <b>{t('tutorPerk')}</b>
+                <button type="button" className="gol-coach-skip" onPointerDown={(e) => { e.stopPropagation(); skipTutor(); }}>{t('tutorSkip')}</button>
+              </div>
+            )}
+            {tutor === 'perk' && <div className="gol-coach-perk-arrow" aria-hidden />}
             <div className="gol-choice-row">
               {offers.map((o, i) => (
-                <button key={o.id} className={`gol-offer gol-offer--${PERK_TONE[o.id] || 'common'}`} onPointerDown={(e) => { e.stopPropagation(); pickPerk(o.id); }}>
+                <button key={o.id} className={`gol-offer gol-offer--${PERK_TONE[o.id] || 'common'}${tutor === 'perk' ? ' gol-offer--coach' : ''}`} onPointerDown={(e) => { e.stopPropagation(); pickPerk(o.id); }}>
                   {guest && <span className="gol-offer-key">{i + 1}</span>}
                   {guest && <PerkMark id={o.id} />}
                   <b>{t(o.name)}</b>
@@ -658,6 +730,11 @@ export function Lawn() {
               <span><kbd>Space</kbd> {t('keyStart')}</span>
               <span><kbd>F</kbd> {t('keySpeed')}</span>
             </div>
+            {guest && (
+              <button type="button" className="gol-tutor-replay" onPointerDown={(e) => { e.stopPropagation(); replayTutorial(); }}>
+                {t('tutorReplay')}
+              </button>
+            )}
           </div>
         </>
       )}
@@ -717,6 +794,11 @@ export function Lawn() {
             <div className="gol-meta-note">{t('metaNext')}</div>
             <div className="gol-btns">
               <button className="gol-btn gol-btn--primary" onPointerDown={again}>{t('again')}</button>
+              {guest && (
+                <button type="button" className="gol-btn gol-btn--ghost" onPointerDown={(e) => { e.stopPropagation(); replayTutorial(); }}>
+                  {t('tutorReplay')}
+                </button>
+              )}
               {(isInAigram || isCrazyGamesBuild) && (
                 <button className="gol-btn gol-btn--ghost" onPointerDown={() => setShowBoard(true)}>
                   <Tomb /> {t('leaderboard')}
@@ -725,6 +807,10 @@ export function Lawn() {
             </div>
           </div>
         </div>
+      )}
+
+      {guest && phase === 'playing' && tutor && tutor !== 'wait' && (
+        <Coach step={tutor} desk={desk} spots={spots} onSkip={skipTutor} />
       )}
 
       <button className="gol-mute" onPointerDown={toggleMute}><Sound on={!muted} /></button>

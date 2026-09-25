@@ -19,7 +19,7 @@ const START_LIVES = 5;
 // instead of hitting an exponential wall around lvl 10. There's always a next level
 // to pour souls into, and it stays affordable as the nights (and your kills) climb.
 //   lvl1:55  2:145  3:256  5:524  10:1381  15:2585  20:3646 …  gentle, endless.
-const UPGRADE_COST = (lvl: number) => Math.round(55 * Math.pow(lvl, 1.4));
+export const UPGRADE_COST = (lvl: number) => Math.round(55 * Math.pow(lvl, 1.4));
 const TOWER_MAX_LVL = 99;   // effectively no ceiling — the only limit is how long you last
 const TOWER_VFORM_MAX = 4;  // the head's silhouette has 4 distinct forms; deeper levels keep the top form (+ grow)
 const ENEMY_SCALE = 0.46;
@@ -246,6 +246,18 @@ export interface GameCommands {
   start: boolean;
   upgrade: boolean;
   speed: number;
+  /** Guest tutorial is on screen. Host leaves this false. */
+  coach: boolean;
+  /** Hold the night-1 auto start until the player presses Space or the button. */
+  coachHold: boolean;
+}
+export interface CoachSpots {
+  socket: { x: number; y: number } | null;
+  spawn: { x: number; y: number } | null;
+  /** Screen-space direction ghosts walk, from the gate onto the path. */
+  spawnDir: { x: number; y: number };
+  tower: { x: number; y: number } | null;
+  hold: string;
 }
 /** Seconds the player has to spend souls between nights before the next wave walks in. Space skips it. */
 export const PREP_SECONDS = 2.6;
@@ -261,6 +273,8 @@ interface Props {
   onGameOver: (score: number, wave: number) => void;
   registerRestart: (fn: () => void) => void;
   commands: MutableRefObject<GameCommands>;
+  /** Guest tutorial markers. Host omits this. */
+  onCoach?: (spots: CoachSpots) => void;
   /** Crazy Games landscape framing. Host and portrait guests leave this off. */
   desk?: boolean;
   rails?: DeskRails;
@@ -331,7 +345,7 @@ function projectSpan(cam: THREE.Camera, pts: [number, number][], w: number, h: n
 }
 
 // ─── The game world + loop ──────────────────────────────────────────────────
-function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onGameOver, registerRestart, commands, desk = false, rails, guest = false }: Props) {
+function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onGameOver, registerRestart, commands, onCoach, desk = false, rails, guest = false }: Props) {
   const { scene, camera, gl, size } = useThree();
   const root = useMemo(() => new THREE.Group(), []);
   const fx = useMemo(() => new THREE.Group(), []);
@@ -373,6 +387,7 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
     onWaveCb: null as ((p: WavePreview) => void) | null,
     onNightClear: null as ((r: NightReport) => void) | null,
     onInspect: null as ((i: InspectInfo) => void) | null,
+    onCoach: null as ((s: CoachSpots) => void) | null,
   });
   S.current.selectedType = selectedType; // keep the chosen weapon in sync each render
   S.current.cmdRef = commands;
@@ -380,6 +395,7 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
   S.current.onNightClear = onNightClear;
   S.current.onInspect = onInspect;
   S.current.onHud = onHud;
+  S.current.onCoach = onCoach || null;
 
   // orbital camera — drag to rotate the board around its centre (azimuth only).
   const CC = useMemo(() => new THREE.Vector3(0, 0, -1.2), []);  // board centre
@@ -390,6 +406,9 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
   frameRef.current = { desk, mode, railL: rails?.left ?? 0, railR: rails?.right ?? 0, w: size.width, h: size.height };
   const guestRef = useRef(guest);
   guestRef.current = guest;
+  const coachAcc = useRef(0);
+  const coachSig = useRef('');
+  const coachV = useRef(new THREE.Vector3());
   const applyCam = useCallback(() => {
     const cam = camera as THREE.OrthographicCamera;
     const az = azimuthRef.current;
@@ -606,6 +625,45 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
         guard++;
       }
     }
+    if (guestRef.current && rootSt.cmdRef?.current?.coach && rootSt.onCoach && rootSt.plots.length) {
+      coachAcc.current += frameDt;
+      if (coachAcc.current >= 0.12) {
+        coachAcc.current = 0;
+        const rect = gl.domElement.getBoundingClientRect();
+        const project = (x: number, z: number) => {
+          coachV.current.set(x, 0.45, z).project(camera);
+          return {
+            x: ((coachV.current.x + 1) / 2) * rect.width + rect.left,
+            y: ((-coachV.current.y + 1) / 2) * rect.height + rect.top,
+          };
+        };
+        const empty = rootSt.plots.filter((p) => p.live && !p.tower);
+        empty.sort((a, b) => a.z - b.z || Math.abs(a.x) - Math.abs(b.x));
+        const sock = empty[0];
+        const tw = rootSt.towers[0];
+        const gate = posAlong(0.35);
+        const ahead = posAlong(1.7);
+        const spawn = project(gate.x, gate.z);
+        const nextPt = project(ahead.x, ahead.z);
+        const next: CoachSpots = {
+          socket: sock ? project(sock.x, sock.z) : null,
+          spawn,
+          spawnDir: { x: nextPt.x - spawn.x, y: nextPt.y - spawn.y },
+          tower: tw ? project(tw.x, tw.z) : null,
+          hold: rootSt.hold,
+        };
+        const sig = [
+          next.hold,
+          Math.round(next.socket?.x || 0), Math.round(next.socket?.y || 0),
+          Math.round(next.spawn?.x || 0), Math.round(next.spawn?.y || 0),
+          Math.round(next.tower?.x || 0), Math.round(next.tower?.y || 0),
+        ].join(':');
+        if (sig !== coachSig.current) {
+          coachSig.current = sig;
+          rootSt.onCoach(next);
+        }
+      }
+    }
     for (const dt of ticks) {
       const st = rootSt;
         st.time += dt;
@@ -737,16 +795,21 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
             if (st.hold === 'choice') {
               // paused for the end-of-night pick
             } else if (st.wave === 0 && st.towers.length === 0) {
-              st.idleArm = (st.idleArm || 0) + dt;
-              if (st.idleArm >= 7) beginNight(st, onWave, 0.35);
+              // Tutorial step 1 holds the idle auto-start so the lesson isn't skipped.
+              if (!st.cmdRef?.current?.coachHold) {
+                st.idleArm = (st.idleArm || 0) + dt;
+                if (st.idleArm >= 7) beginNight(st, onWave, 0.35);
+              }
             } else if (st.wave === 0 && st.towers.length > 0) {
               beginNight(st, onWave, 0.4);
             } else if (st.hold === 'arm') {
               if (st.cmdRef?.current?.start) {
                 st.cmdRef.current.start = false;
+                st.cmdRef.current.coachHold = false;
                 st.waveBreak = 0;
               }
-              st.waveBreak -= dt;
+              // Tutorial step 2 waits for Space or the button. Every other night still counts down.
+              if (!st.cmdRef?.current?.coachHold) st.waveBreak -= dt;
               if (st.waveBreak <= 0) releaseWave(st);
             }
           } else {
