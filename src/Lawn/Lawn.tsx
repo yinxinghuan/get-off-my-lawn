@@ -7,7 +7,7 @@ import { Leaderboard, useGameScore } from '@shared/leaderboard';
 import type { LeaderboardEntry } from '@shared/leaderboard';
 import { useGameEvent, getTelegramId, isInAigramNow, isCrazyGamesBuild } from '@shared/runtime';
 import { unlockAudio, setMuted, isMuted, setMusic } from './audio';
-import { Candle, Skull, Sound, Tomb, Finger, Flame, Frost, Burst, Crown, Bolt, Venom, Lock, PerkMark, Chain } from './icons';
+import { Candle, Skull, Sound, Tomb, Finger, Flame, Frost, Burst, Crown, Bolt, Venom, Lock, PerkMark, Chain, WeaponGlyph, YardStone, SoulMark, ShardMark } from './icons';
 import { getLang, t, type StrKey } from './i18n';
 import {
   awardRun, buyRank, damageMul, getFurthest, getRanks, getShards, META_CAPS,
@@ -22,6 +22,24 @@ const TYPE_ICON = [Flame, Frost, Burst, Bolt, Venom]; // by TOWER_TYPES order
 const WEAPON_KEY: Record<string, StrKey> = {
   brazier: 'wFire', frost: 'wFrost', mortar: 'wBone', storm: 'wStorm', venom: 'wPlague',
 };
+const SPARKS = [
+  { x: 8, dx: -46, dy: -36, s: 1.1, c: '#ffd15e', d: 0, w: 8 },
+  { x: 16, dx: -28, dy: -58, s: 0.7, c: '#ff8a2a', d: 0.05, w: 6 },
+  { x: 24, dx: -18, dy: -28, s: 1.3, c: '#7ee7ff', d: 0.12, w: 10 },
+  { x: 32, dx: -8, dy: -64, s: 0.6, c: '#ffd15e', d: 0.02, w: 5 },
+  { x: 40, dx: 4, dy: -42, s: 1, c: '#7cff6b', d: 0.18, w: 7 },
+  { x: 48, dx: 0, dy: -70, s: 0.8, c: '#fff6c2', d: 0.08, w: 6 },
+  { x: 56, dx: 12, dy: -34, s: 1.2, c: '#ff8a2a', d: 0.14, w: 9 },
+  { x: 64, dx: 22, dy: -60, s: 0.55, c: '#7ee7ff', d: 0.04, w: 5 },
+  { x: 72, dx: 30, dy: -40, s: 1, c: '#ffd15e', d: 0.2, w: 8 },
+  { x: 80, dx: 42, dy: -52, s: 0.75, c: '#7cff6b', d: 0.1, w: 6 },
+  { x: 88, dx: 50, dy: -24, s: 1.15, c: '#ff8a2a', d: 0.16, w: 7 },
+  { x: 12, dx: -36, dy: -18, s: 0.5, c: '#fff6c2', d: 0.22, w: 4 },
+  { x: 36, dx: -6, dy: -22, s: 0.9, c: '#ffd15e', d: 0.26, w: 5 },
+  { x: 52, dx: 8, dy: -16, s: 0.45, c: '#7ee7ff', d: 0.06, w: 4 },
+  { x: 68, dx: 18, dy: -20, s: 0.85, c: '#e7e0cb', d: 0.24, w: 6 },
+  { x: 84, dx: 34, dy: -14, s: 0.6, c: '#ffd15e', d: 0.3, w: 5 },
+];
 const PERK_TONE: Record<string, string> = {
   haste: 'common', sight: 'rare', edge: 'epic', souls: 'gold', candle: 'gold', tithe: 'rare',
 };
@@ -290,9 +308,11 @@ export function Lawn() {
   useEffect(() => {
     if (!upgradeHint) return;
     if (hud.upgrades > 0 || hud.wave >= 2 || choice) { setUpgradeHint(false); return; }
+    // Guest: the night banner owns the one toast slot. Hold the hint until it leaves.
+    if (guest && waveBanner != null) return;
     const id = window.setTimeout(() => setUpgradeHint(false), 3200);
     return () => window.clearTimeout(id);
-  }, [upgradeHint, hud.upgrades, hud.wave, choice]);
+  }, [upgradeHint, hud.upgrades, hud.wave, choice, waveBanner, guest]);
 
   useEffect(() => {
     const w = hud.wave;
@@ -301,9 +321,13 @@ export function Lawn() {
     const just = TOWER_TYPES.find((tw) => tw.unlock === w);
     if (!just) return;
     setUnlockToast(t(WEAPON_KEY[just.id] || 'wFire'));
+  }, [hud.wave]);
+  useEffect(() => {
+    if (!unlockToast) return;
+    if (guest && waveBanner != null) return;
     const id = window.setTimeout(() => setUnlockToast(null), 3200);
     return () => window.clearTimeout(id);
-  }, [hud.wave]);
+  }, [unlockToast, waveBanner, guest]);
 
   useEffect(() => {
     if (phase !== 'playing') return;
@@ -427,11 +451,7 @@ export function Lawn() {
           <div className="gol-rail-gap">
             {desk && !choice && (
               <div className="gol-coming">
-                <svg className="gol-coming-mark" viewBox="0 0 80 108" aria-hidden>
-                  <path d="M12 40C12 16 28 6 40 6s28 10 28 34v58H12V40z" fill="#1a0c28" stroke="#7cff6b" strokeWidth="4" />
-                  <path d="M34 52h12v28H34z" fill="#ffd15e" />
-                  <circle cx="40" cy="28" r="6" fill="#7ee7ff" />
-                </svg>
+                <YardStone />
                 <div className="gol-coming-k">{preview && preview.lineup.length > 0 ? t('onThePath') : t('railWait')}</div>
                 {preview && preview.lineup.length > 0 && (
                   <div className="gol-coming-line">{lineupText(preview.lineup)}</div>
@@ -439,7 +459,7 @@ export function Lawn() {
                 <div className={`gol-coming-boss${eta === 0 ? ' is-now' : ''}`}>
                   {eta === 0 ? <b>{t('bossNow')}</b> : <><b>{eta}</b><span>{t('bossIn')}</span></>}
                 </div>
-                <div className="gol-shards"><span className={`gol-shards-n${shardPop ? ' gol-numpop' : ''}`} key={shardPop}>{shards}</span><span className="gol-shards-k">{t('shards')}</span></div>
+                <div className="gol-shards"><ShardMark size={16} /><span className={`gol-shards-n${shardPop ? ' gol-numpop' : ''}`} key={shardPop}>{shards}</span><span className="gol-shards-k">{t('shards')}</span></div>
               </div>
             )}
           </div>
@@ -449,7 +469,7 @@ export function Lawn() {
             </div>
           )}
           <div className={`gol-hud gol-souls${hud.cash >= sel.cost ? ' gol-souls--ready' : ''}`}>
-            <Skull /> <span className={`gol-souls-n${cashPop ? ' gol-numpop' : ''}`} key={cashPop}>{hud.cash}</span> <span className="gol-souls-k">{t('souls')}</span>
+            {guest ? <SoulMark size={18} /> : <Skull />} <span className={`gol-souls-n${cashPop ? ' gol-numpop' : ''}`} key={cashPop}>{hud.cash}</span> <span className="gol-souls-k">{t('souls')}</span>
           </div>
           </div>
 
@@ -470,7 +490,7 @@ export function Lawn() {
                 : <div className="gol-guide-txt"><b>{t('guideEarn')}</b></div>}
             </div>
           )}
-          {upgradeHint && !choice && <div className="gol-hint">{desk ? t('clickUpgrade2') : t('tapUpgrade2')}</div>}
+          {!guest && upgradeHint && !choice && <div className="gol-hint">{t('tapUpgrade2')}</div>}
 
           <div className="gol-tray">
             {TOWER_TYPES.map((tw, i) => {
@@ -482,7 +502,7 @@ export function Lawn() {
                   <button key={tw.id} className="gol-card gol-card--locked" disabled>
                     <span className="gol-card-key">{i + 1}</span>
                     {guest && <span className="gol-card-chain"><Chain /></span>}
-                    <span className="gol-card-ico"><Lock size={22} /></span>
+                    <span className="gol-card-ico">{guest ? <WeaponGlyph id={tw.id} /> : <Lock size={22} />}</span>
                     <span className="gol-card-body">
                       <span className="gol-card-name">{t(WEAPON_KEY[tw.id])}</span>
                       <span className="gol-card-cost gol-card-unlock">{t('wave')} {tw.unlock}</span>
@@ -497,16 +517,16 @@ export function Lawn() {
                   onPointerDown={(e) => { e.stopPropagation(); setSelectedType(i); }}
                 >
                   <span className="gol-card-key">{i + 1}</span>
-                  <span className="gol-card-ico"><Ico size={26} /></span>
+                  <span className="gol-card-ico">{guest ? <WeaponGlyph id={tw.id} /> : <Ico size={26} />}</span>
                   <span className="gol-card-body">
                     <span className="gol-card-name">{t(WEAPON_KEY[tw.id])}</span>
-                    <span className="gol-card-cost"><Skull size={13} /> {tw.cost}</span>
+                    <span className="gol-card-cost">{guest ? <SoulMark size={14} /> : <Skull size={13} />} {tw.cost}</span>
                   </span>
                 </button>
               );
             })}
           </div>
-          {unlockToast && (
+          {!guest && unlockToast && (
             <div className="gol-unlock" key={unlockToast}>
               <span className="gol-unlock-k">{t('newWeapon')}</span>
               <span className="gol-unlock-n">{unlockToast}</span>
@@ -524,7 +544,31 @@ export function Lawn() {
         </>
       )}
 
-      {waveBanner != null && phase === 'playing' && !choice && (
+      {guest && phase === 'playing' && !choice && (waveBanner != null || unlockToast || upgradeHint) && (
+        <div className="gol-toasts">
+          {waveBanner != null ? (
+            <div className={`gol-wavebanner${bossBanner ? ' gol-wavebanner--boss' : ''}`} key={waveBanner}>
+              {bossBanner && (
+                <span className="gol-bosswarn">
+                  {t('boss')}{preview?.bossName ? ` · ${t(preview.bossName as StrKey)}` : ''}
+                </span>
+              )}
+              <span>{t('wave')} {waveBanner}</span>
+              {preview && preview.lineup.length > 0 && (
+                <span className="gol-lineup">{lineupText(preview.lineup)}</span>
+              )}
+            </div>
+          ) : unlockToast ? (
+            <div className="gol-unlock" key={unlockToast}>
+              <span className="gol-unlock-k">{t('newWeapon')}</span>
+              <span className="gol-unlock-n">{unlockToast}</span>
+            </div>
+          ) : (
+            <div className="gol-hint">{desk ? t('clickUpgrade2') : t('tapUpgrade2')}</div>
+          )}
+        </div>
+      )}
+      {!guest && waveBanner != null && phase === 'playing' && !choice && (
         <div className={`gol-wavebanner${bossBanner ? ' gol-wavebanner--boss' : ''}`} key={waveBanner}>
           {bossBanner && (
             <span className="gol-bosswarn">
@@ -548,7 +592,23 @@ export function Lawn() {
           <div className={`gol-choice${guest ? ' gol-choice--fanfare' : ''}`}>
             {guest ? (
               <div className="gol-fanfare">
-                <div className="gol-sparks" aria-hidden>{[0, 1, 2, 3, 4, 5, 6, 7].map((i) => <i key={i} />)}</div>
+                <div className="gol-sparks" aria-hidden>
+                  {SPARKS.map((s, i) => (
+                    <i
+                      key={i}
+                      style={{
+                        left: `${s.x}%`,
+                        width: s.w,
+                        height: s.w,
+                        background: s.c,
+                        animationDelay: `${s.d}s`,
+                        ['--dx' as string]: `${s.dx}px`,
+                        ['--dy' as string]: `${s.dy}px`,
+                        ['--s' as string]: String(s.s),
+                      }}
+                    />
+                  ))}
+                </div>
                 <div className="gol-fanfare-ribbon">{t('wave')} {choice.wave}</div>
                 <div className="gol-fanfare-title">{t('clearedBang')}</div>
               </div>

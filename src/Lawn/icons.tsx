@@ -119,46 +119,155 @@ export function Finger({ size = 46 }: { size?: number }) {
   );
 }
 
-/** Guest-build perk marks. Vector only, same bone/gold palette as the rest of the set. */
+/**
+ * Guest weapon marks. One construction: 24px viewBox, 1.75 stroke, bone body,
+ * a single top-left highlight and one accent. Host keeps the older glyphs.
+ */
+export function WeaponGlyph({ id, size = 26 }: { id: string; size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>
+      {id === 'frost' && (
+        <>
+          <path d="M12 3.2v17.6M5.2 7.2l13.6 9.6M18.8 7.2L5.2 16.8" stroke={C.frost} strokeWidth="1.75" strokeLinecap="round" />
+          <path d="M12 6.2l1.6-1.8M12 6.2L10.4 4.4M12 17.8l1.6 1.8M12 17.8l-1.6 1.8" stroke={C.bone} strokeWidth="1.75" strokeLinecap="round" />
+          <circle cx="12" cy="12" r="1.7" fill={C.bone} />
+        </>
+      )}
+      {id === 'mortar' && (
+        <>
+          <path d="M12 3.2l1.5 4.2 4.4-1.1-2.2 4 3.5 2.8-4.6.4.6 4.5L12 20.2l-3.2-2.2.6-4.5-4.6-.4 3.5-2.8-2.2-4 4.4 1.1z" fill={C.haunt} stroke={C.ink} strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M10.2 8.4l1.2-2.2 1.1 1.4" stroke="#f4e8ff" strokeWidth="1.2" strokeLinecap="round" />
+          <circle cx="12" cy="12" r="1.8" fill={C.bone} />
+        </>
+      )}
+      {id === 'storm' && (
+        <>
+          <path d="M13.2 2.6L6 12.4h4.6L9.2 21.4 18 10.2h-4.8z" fill={C.storm} stroke={C.ink} strokeWidth="1.5" strokeLinejoin="round" />
+          <path d="M12.2 5.2l-2.2 4.2h2.2" stroke="#fff6c2" strokeWidth="1.2" strokeLinecap="round" />
+        </>
+      )}
+      {id === 'venom' && (
+        <>
+          <path d="M12 2.8c2.6 3.6 4.8 6.4 4.8 9.4a4.8 4.8 0 0 1-9.6 0c0-3 2.2-5.8 4.8-9.4z" fill={C.venom} stroke={C.ink} strokeWidth="1.5" strokeLinejoin="round" />
+          <path d="M10.2 6.4c.6 1.4.8 2.4.6 3.4" stroke="#e8ffc4" strokeWidth="1.2" strokeLinecap="round" />
+          <circle cx="10.1" cy="12.2" r="1.15" fill={C.ink} />
+          <circle cx="13.6" cy="14" r="0.85" fill={C.ink} />
+        </>
+      )}
+      {(id === 'brazier' || !['frost', 'mortar', 'storm', 'venom'].includes(id)) && (
+        <>
+          <path d="M12.6 2.8c.6 2.2-.2 3.8-1.5 5.2-1.2 1.3-2.6 2.4-2.6 4.8a4.2 4.2 0 0 0 8.4 0c0-1.6-.7-2.9-1.4-4-.3.8-.9 1.3-1.6 1.6.7-2.1.2-4.5-1.3-7.6z" fill={C.ember} stroke={C.ink} strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M12 10.6c.8 1 1.2 1.8 1.2 2.6a1.35 1.35 0 0 1-2.7 0c0-.8.6-1.6 1.5-2.6z" fill="#ffe0b0" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+/** Guest resource marks. Same 24px construction as WeaponGlyph. Host keeps Skull. */
+export function SoulMark({ size = 16 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>
+      <path d="M12 3.2c3.6 0 6 2.4 6 5.6 0 1.7-.7 3-1.7 3.8v1.7c0 .7-.5 1.2-1.1 1.2h-.5v1c0 .5-.4.8-.8.8s-.8-.3-.8-.8v-1H10.9v1c0 .5-.4.8-.8.8s-.8-.3-.8-.8v-1h-.5c-.6 0-1.1-.5-1.1-1.2V12.6C6.7 11.8 6 10.5 6 8.8c0-3.2 2.4-5.6 6-5.6z" fill={C.bone} stroke={C.ink} strokeWidth="1.5" strokeLinejoin="round" />
+      <circle cx="9.7" cy="9.2" r="1.15" fill={C.ink} />
+      <circle cx="14.3" cy="9.2" r="1.15" fill={C.ink} />
+      <path d="M8.2 5.6c1.2-1 2.6-1.5 3.8-1.5" stroke="#f4efe2" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function ShardMark({ size = 16 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>
+      <path d="M12 2.4l5.4 4.4 1.6 6.4L12 21.6 5 13.2l1.6-6.4z" fill={C.gold} stroke={C.ink} strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M7.4 8.6h9.2L12 18.2 7.4 8.6z" fill="#ffe7a4" opacity="0.7" />
+      <path d="M9.2 6.4L12 4.2l1.5 1.6" stroke="#fff6c2" strokeWidth="1.1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Shaded yard stone for the guest path card. Original drawing. */
+export function YardStone() {
+  return (
+    <svg className="gol-coming-mark" viewBox="0 0 120 156" aria-hidden>
+      <defs>
+        <linearGradient id="gol-stone" x1="18" y1="8" x2="96" y2="148" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#e4dcc6" />
+          <stop offset="0.42" stopColor="#8f8b78" />
+          <stop offset="1" stopColor="#3c4338" />
+        </linearGradient>
+        <linearGradient id="gol-moss" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#7dbe58" />
+          <stop offset="1" stopColor="#2a4a22" />
+        </linearGradient>
+        <radialGradient id="gol-stone-glow" cx="50%" cy="40%" r="50%">
+          <stop offset="0" stopColor="#ffd15e" stopOpacity="0.85" />
+          <stop offset="1" stopColor="#ffd15e" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <ellipse className="gol-stone-glow" cx="60" cy="78" rx="46" ry="58" fill="url(#gol-stone-glow)" />
+      <ellipse cx="60" cy="146" rx="40" ry="7" fill="#120814" opacity="0.45" />
+      <path d="M28 62c0-28 12-46 32-46s32 18 32 46v74H28V62z" fill="url(#gol-stone)" stroke="#1a120c" strokeWidth="3" />
+      <path d="M34 64c1-22 10-38 26-38 6 0 12 3 16 8-8 2-18 10-22 24-3 10-3 22-2 34H34V64z" fill="#f3ecda" opacity="0.28" />
+      <path d="M78 40c8 10 12 24 12 40v48h-8c1-16-2-34-10-48 2-14 4-28 6-40z" fill="#1c2218" opacity="0.28" />
+      <path d="M58 48c6 10 4 18-2 28" fill="none" stroke="#2a261c" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M64 70c-4 6-2 10 2 14" fill="none" stroke="#2a261c" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M46 78h28M60 66v24" stroke="#2c2820" strokeWidth="3" strokeLinecap="round" />
+      <path d="M48 78h24M60 68v20" stroke="#cfc6ae" strokeWidth="1" strokeLinecap="round" opacity="0.7" />
+      <ellipse cx="36" cy="128" rx="14" ry="8" fill="url(#gol-moss)" />
+      <ellipse cx="86" cy="132" rx="16" ry="7" fill="#3d6a30" />
+      <ellipse cx="78" cy="126" rx="7" ry="4" fill="#8ed06a" opacity="0.8" />
+      <path d="M24 136h72v6H24z" fill="#2a3128" />
+    </svg>
+  );
+}
+
+/** Guest-build perk marks. Same stroke and lighting as WeaponGlyph. */
 export function PerkMark({ id }: { id: string }) {
-  const common = (
-    <svg viewBox="0 0 32 32" className="gol-perk-ico" aria-hidden>
+  return (
+    <svg viewBox="0 0 24 24" className="gol-perk-ico" aria-hidden>
       {id === 'sight' && (
         <>
-          <path d="M2 16s5.2-8 14-8 14 8 14 8-5.2 8-14 8S2 16 2 16z" fill="none" stroke={C.bone} strokeWidth="2" />
-          <circle cx="16" cy="16" r="4" fill={C.wisp} />
+          <path d="M2.2 12s3.6-6 9.8-6 9.8 6 9.8 6-3.6 6-9.8 6-9.8-6-9.8-6z" fill="#1a120c" stroke={C.bone} strokeWidth="1.75" />
+          <circle cx="12" cy="12" r="2.6" fill={C.frost} stroke={C.ink} strokeWidth="1.2" />
+          <path d="M6 10.2c1.6-1.6 3.6-2.4 6-2.4" stroke="#f4efe2" strokeWidth="1.1" strokeLinecap="round" />
         </>
       )}
       {id === 'edge' && (
-        <path d="M6 26L22 6l4 2-12 18-4 2-4-2z" fill={C.bone} stroke={C.gold} strokeWidth="1.2" />
+        <>
+          <path d="M5 19.2L16.2 4.6l3.2 1.6-8.6 12.2-2.8 1.6-3-0.8z" fill={C.bone} stroke={C.ink} strokeWidth="1.5" strokeLinejoin="round" />
+          <path d="M8 16.2l8.4-10" stroke={C.gold} strokeWidth="1.4" strokeLinecap="round" />
+        </>
       )}
       {id === 'souls' && (
         <>
-          <circle cx="16" cy="13" r="7" fill={C.bone} />
-          <circle cx="13.2" cy="12.4" r="1.5" fill={C.ink} />
-          <circle cx="18.8" cy="12.4" r="1.5" fill={C.ink} />
-          <path d="M12 20c1.2 2 2.6 3 4 3s2.8-1 4-3" fill={C.gold} />
+          <path d="M12 3.4c3.4 0 5.6 2.2 5.6 5.2 0 1.6-.7 2.8-1.6 3.5v1.6c0 .6-.4 1-1 1h-.4v.8c0 .4-.3.7-.7.7s-.7-.3-.7-.7v-.8H10.8v.8c0 .4-.3.7-.7.7s-.7-.3-.7-.7v-.8h-.4c-.6 0-1-.4-1-1v-1.6c-.9-.7-1.6-1.9-1.6-3.5 0-3 2.2-5.2 5.6-5.2z" fill={C.bone} stroke={C.ink} strokeWidth="1.3" />
+          <circle cx="9.8" cy="9.2" r="1.1" fill={C.ink} />
+          <circle cx="14.2" cy="9.2" r="1.1" fill={C.ink} />
         </>
       )}
       {id === 'candle' && (
         <>
-          <path d="M12 14h8v12a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2z" fill={C.bone} />
-          <path d="M16 4c1.6 2.2 2.4 3.6 2.4 5a2.4 2.4 0 0 1-4.8 0c0-1.4.8-2.8 2.4-5z" fill={C.gold} />
+          <path d="M9 10.2h6v8.2a1.4 1.4 0 0 1-1.4 1.4h-3.2A1.4 1.4 0 0 1 9 18.4z" fill={C.bone} stroke={C.ink} strokeWidth="1.4" />
+          <path d="M9.4 10.2h1.6v9.4" stroke="#f4efe2" strokeWidth="1" opacity="0.7" />
+          <path d="M12 3.2c1.2 1.6 1.8 2.6 1.8 3.6a1.8 1.8 0 0 1-3.6 0c0-1 .6-2 1.8-3.6z" fill={C.gold} stroke={C.ink} strokeWidth="1" />
         </>
       )}
       {id === 'tithe' && (
         <>
-          <ellipse cx="16" cy="22" rx="8" ry="3.2" fill={C.boneD} />
-          <path d="M8 16c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2V12c0 1.8-3.6 3.2-8 3.2S8 13.8 8 12z" fill={C.gold} />
-          <ellipse cx="16" cy="12" rx="8" ry="3.2" fill={C.goldD} />
+          <ellipse cx="12" cy="16.6" rx="6.2" ry="2.3" fill={C.goldD} stroke={C.ink} strokeWidth="1.3" />
+          <path d="M5.8 12.4c0 1.3 2.8 2.3 6.2 2.3s6.2-1 6.2-2.3v-1.6c0 1.3-2.8 2.3-6.2 2.3s-6.2-1-6.2-2.3z" fill={C.gold} stroke={C.ink} strokeWidth="1.3" />
+          <ellipse cx="12" cy="10.2" rx="6.2" ry="2.3" fill="#ffe7a4" stroke={C.ink} strokeWidth="1.3" />
         </>
       )}
       {(id === 'haste' || !['sight', 'edge', 'souls', 'candle', 'tithe'].includes(id)) && (
-        <path d="M14 4l-6 12h6l-2 12 12-14h-7z" fill={C.gold} stroke={C.bone} strokeWidth="1" />
+        <>
+          <path d="M13 2.8L6.4 12.2h4.2L9.4 21.2 17.6 10.4h-4.4z" fill={C.gold} stroke={C.ink} strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M12 6.2l-2 3.6h2" stroke="#fff6c2" strokeWidth="1.1" strokeLinecap="round" />
+        </>
       )}
     </svg>
   );
-  return common;
 }
 
 export function Chain({ size = 18 }: { size?: number }) {

@@ -409,14 +409,19 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
     // fighting slide it so the lane sits between the side rails.
     if (framed && w > 0 && h > 0) {
       const yardPx = projectSpan(cam, YARD_FRAME, w, h);
+      // Play keeps a sky band at the top of the lane so the one toast slot
+      // sits above the graves. Attract still fills the frame. Host never frames.
+      const toastBand = frameMode === 'play' ? Math.min(88, Math.round(h * 0.12)) : 0;
       const pad = frameMode === 'play' ? 1.0 : 1.04;
-      cam.zoom = CAM_ZOOM * Math.min((w * pad) / yardPx.w, (h * pad) / yardPx.h);
+      const fitH = Math.max(1, h - toastBand);
+      cam.zoom = CAM_ZOOM * Math.min((w * pad) / yardPx.w, (fitH * pad) / yardPx.h);
       cam.updateProjectionMatrix();
       const focus = frameMode === 'play' ? LANE_FRAME : YARD_FRAME;
       const box = projectSpan(cam, focus, w, h);
       const playCx = frameMode === 'play' ? railL + (w - railL - railR) / 2 : w / 2;
+      const playCy = (h + toastBand) / 2;
       const dx = box.cx - playCx;
-      const dy = box.cy - h / 2;
+      const dy = box.cy - playCy;
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
         cam.setViewOffset(w, h, dx, dy, w, h);
         cam.updateProjectionMatrix();
@@ -481,7 +486,8 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
         if (st.cash >= cost) {
           st.cash -= cost; upgradeTower(tw, st.mods); st.upgrades = (st.upgrades || 0) + 1; sfx.upgrade();
           punch(tw.head);                                  // tower jolts
-          deathBurst(fx, tw.x, tw.z);                     // upward spark burst
+          if (guestRef.current) sparkBurst(fx, tw.x, tw.z);
+          else deathBurst(fx, tw.x, tw.z);
           ringPulse(fx, tw.x, tw.z, tw.color);
           pushHud(st);
         } else { bounce(tw.g); sfx.splat(); floatCost(fx, tw.x, tw.z, fmtCost(cost), 0xff5c6b); } // show the price you're short on
@@ -623,10 +629,18 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
         const rangeSig = placeRange + (guestNow ? 0.001 : 0);
         if (st.plots.length && Math.abs((st.shownRange ?? -1) - rangeSig) > 0.02) {
           st.shownRange = rangeSig;
-          const band = guestNow ? 0.045 : 0.08;
+          const band = guestNow ? 0.12 : 0.08;
           for (const p of st.plots) {
             p.rangeDisc.geometry.dispose();
-            p.rangeDisc.geometry = new THREE.RingGeometry(Math.max(0.2, placeRange - band), placeRange, guestNow ? 72 : 42);
+            if (guestNow) {
+              p.rangeDisc.geometry = new THREE.CircleGeometry(placeRange, 48);
+              const mat = p.rangeDisc.material as THREE.MeshBasicMaterial;
+              mat.map = guestRangeMap();
+              mat.color.setHex(0xffffff);
+              mat.depthWrite = false;
+            } else {
+              p.rangeDisc.geometry = new THREE.RingGeometry(Math.max(0.2, placeRange - band), placeRange, 42);
+            }
           }
         }
         for (const p of st.plots) {
@@ -650,16 +664,30 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
           if (showRange) {
             const rmR = p.rangeDisc.material as THREE.MeshBasicMaterial;
             if (guestNow) {
-              rmR.color.setHex(0xffd15e);
-              rmR.opacity = 0.92;
-              p.rangeDisc.rotation.z += dt * 0.4;
+              rmR.opacity = 0.78 + 0.22 * Math.sin(st.time * 3.1);
+              p.rangeDisc.rotation.z += dt * 0.45;
             } else {
               rmR.color.setHex(TOWER_TYPES[st.selectedType].color);
               rmR.opacity = st.hoverPlot === p ? 0.62 : 0.34;
             }
           }
           const rm = p.ring.material as THREE.MeshBasicMaterial;
-          if (aff) {
+          if (guestNow) {
+            // One accent on the pad under the cursor. Other sockets stay bone-dim
+            // so they don't compete with the gold range ring.
+            const hot = st.hoverPlot === p;
+            if (aff) {
+              rm.color.setHex(hot ? 0xffd15e : 0xc8bfa6);
+              rm.opacity = hot ? 0.55 : 0.2;
+              p.ring.scale.setScalar(hot ? 1.04 : 0.9);
+              p.ghost.visible = true;
+              p.ghost.position.y = Math.sin(st.time * 2 + p.x) * 0.07;
+            } else {
+              rm.color.setHex(0x5a5348); rm.opacity = 0.14;
+              p.ring.scale.setScalar(0.86);
+              p.ghost.visible = false;
+            }
+          } else if (aff) {
             const pulse = 0.6 + Math.sin(st.time * 3.2 + p.x) * 0.28;
             rm.color.setHex(0x79e0ad); rm.opacity = pulse;
             p.ring.scale.setScalar(1 + Math.sin(st.time * 3.2 + p.x) * 0.06);
@@ -861,8 +889,17 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
             const hot = !isAttract && st.hoverTower === tw;
             tw.ring.visible = hot;
             if (hot) {
-              ringMat.opacity = 0.9;
-              ringMat.color.setHex(0xffd15e);
+              if (!tw.ring.userData.guestRing) {
+                tw.ring.geometry.dispose();
+                tw.ring.geometry = new THREE.CircleGeometry(1, 48);
+                ringMat.map = guestRangeMap();
+                ringMat.color.setHex(0xffffff);
+                ringMat.depthWrite = false;
+                tw.ring.userData.guestRing = 1;
+              }
+              tw.ring.scale.set(tw.range, tw.range, 1);
+              ringMat.opacity = 0.8 + 0.2 * Math.sin(st.time * 3.1);
+              tw.ring.rotation.z += dt * 0.35;
             }
           } else {
             tw.ring.visible = true;
@@ -1159,6 +1196,36 @@ function makeGravestone(i: number): THREE.Group {
   g.add(flatify(box(0.6, 0.12, 0.36, 0x4a4d45, 0, 0.06, 0.04)));    // base
   g.scale.setScalar(0.95 + (i % 3) * 0.12);
   return g;
+}
+
+function guestRangeMap(): THREE.CanvasTexture {
+  const bag = guestRangeMap as unknown as { tex?: THREE.CanvasTexture };
+  if (bag.tex) return bag.tex;
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const g = c.getContext('2d')!;
+  g.clearRect(0, 0, 256, 256);
+  const fill = g.createRadialGradient(128, 128, 18, 128, 128, 104);
+  fill.addColorStop(0, 'rgba(255, 209, 94, 0.30)');
+  fill.addColorStop(0.62, 'rgba(255, 209, 94, 0.12)');
+  fill.addColorStop(1, 'rgba(255, 209, 94, 0)');
+  g.fillStyle = fill;
+  g.beginPath();
+  g.arc(128, 128, 104, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = 'rgba(255, 209, 94, 0.92)';
+  g.lineWidth = 18;
+  g.lineCap = 'round';
+  g.setLineDash([26, 14]);
+  g.shadowColor = 'rgba(255, 180, 60, 0.85)';
+  g.shadowBlur = 16;
+  g.beginPath();
+  g.arc(128, 128, 92, 0, Math.PI * 2);
+  g.stroke();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  bag.tex = tex;
+  return tex;
 }
 
 function makePlot(x: number, z: number, unlock = 0): Plot {
@@ -1711,6 +1778,36 @@ function splashHit(st: any, root: THREE.Group, x: number, z: number, radius: num
       if (en.hpBar) drawHpBar(en.hpBar, en.hp / en.maxHp);
       if (en.hp <= 0) killEnemy(st, en, root);
     }
+  }
+}
+/** Guest upgrade juice: more motes, mixed sizes and colours, gravity, fade. */
+function sparkBurst(fx: THREE.Group, x: number, z: number) {
+  const cols = [0xffd15e, 0xff8a2a, 0xfff6c2, 0x7ee7ff, 0xe7e0cb];
+  for (let i = 0, n = particleBudget(18); i < n; i++) {
+    const col = cols[i % cols.length];
+    const r = 0.03 + Math.random() * 0.07;
+    const m = ball(r, col, x, 0.65 + Math.random() * 0.45, z);
+    const mm = m.material as THREE.MeshStandardMaterial;
+    mm.transparent = true;
+    mm.opacity = 1;
+    mm.emissive = new THREE.Color(col);
+    mm.emissiveIntensity = 0.55;
+    m.castShadow = false;
+    fx.add(m);
+    const ang = Math.random() * Math.PI * 2;
+    const sp = 1.4 + Math.random() * 4.4;
+    const life = 0.42 + Math.random() * 0.42;
+    PARTICLES.push({
+      m,
+      vx: Math.sin(ang) * sp,
+      vy: 3.4 + Math.random() * 4.2,
+      vz: Math.cos(ang) * sp,
+      life,
+      life0: life,
+      grav: 11,
+      grow: 0,
+      o0: 1,
+    });
   }
 }
 // Block-Party-style death burst — MATTE physical chunks (no glow, so it reads as
