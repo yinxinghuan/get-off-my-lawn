@@ -220,6 +220,8 @@
     transition: transform 0.12s ease, border-color 0.15s ease, box-shadow 0.15s ease, filter 0.2s ease, opacity 0.2s ease;
     &-ico { display: flex; }
     &-ico svg { width: 28px; height: 28px; }
+    &-body { display: contents; }
+    &-key { display: none; }
     &-name {
       font-size: 12px;
       font-weight: 800;
@@ -915,4 +917,272 @@
   20% { transform: translateX(-50%) scale(1.08); opacity: 1; }
   80% { transform: translateX(-50%) scale(1); opacity: 1; }
   100% { transform: translateX(-50%) scale(1.12); opacity: 0; }
+}
+
+// Crazy Games landscape. Host build never gets .gol--desk.
+// Rails match deskRails() via --rail-l / --rail-r on the root.
+.gol.gol--desk {
+  --rail-l: 150px;
+  --rail-r: 172px;
+
+  .gol-lives {
+    top: 14px;
+    left: 16px;
+  }
+  .gol-score {
+    top: 46px;
+    left: 16px;
+    transform: none;
+    align-items: flex-start;
+    text-align: left;
+    width: calc(var(--rail-l) - 28px);
+  }
+  .gol-score-n { font-size: 34px; }
+  .gol-score-row { flex-wrap: wrap; justify-content: flex-start; }
+  .gol-bossbar { width: 100%; }
+
+  .gol-souls {
+    top: auto;
+    right: auto;
+    left: 12px;
+    bottom: 12px;
+    width: calc(var(--rail-l) - 24px);
+    box-sizing: border-box;
+  }
+  .gol-shards {
+    position: absolute;
+    z-index: 5;
+    left: 12px;
+    bottom: 64px;
+    width: calc(var(--rail-l) - 24px);
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 12px;
+    box-sizing: border-box;
+    border-radius: 999px;
+    background: @glass;
+    border: 1px solid @glass-border;
+    pointer-events: none;
+  }
+  .gol-shards-n { font-family: 'Creepster', cursive; font-size: 20px; color: @spectral; }
+  .gol-shards-k { font-size: 9px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: @ink-soft; }
+  .gol-deskkeys {
+    position: absolute;
+    z-index: 5;
+    left: 16px;
+    bottom: 102px;
+    font-size: 11px;
+    font-weight: 700;
+    color: @ink-soft;
+    pointer-events: none;
+    kbd {
+      display: inline-block;
+      margin-right: 4px;
+      padding: 0 5px;
+      border-radius: 4px;
+      border: 1px solid @glass-border;
+      background: rgba(0, 0, 0, 0.35);
+      color: @ink;
+      font-family: @font;
+      font-size: 10px;
+      font-weight: 800;
+    }
+  }
+
+  .gol-keystrip { display: none; }
+
+  .gol-plate {
+    top: 158px;
+    bottom: auto;
+    left: 12px;
+    transform: none;
+    width: calc(var(--rail-l) - 24px);
+    box-sizing: border-box;
+    border-radius: 16px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding: 8px 10px;
+  }
+  .gol-plate-u {
+    margin-top: 2px;
+    font-size: 11px;
+    font-weight: 700;
+    color: @ink-soft;
+    letter-spacing: 0;
+    text-transform: none;
+    kbd {
+      display: inline-block;
+      margin-right: 4px;
+      padding: 0 5px;
+      border-radius: 4px;
+      border: 1px solid @glass-border;
+      background: rgba(0, 0, 0, 0.35);
+      color: @ink;
+      font-family: @font;
+      font-size: 10px;
+      font-weight: 800;
+    }
+  }
+
+  .gol-guide, .gol-hint, .gol-unlock {
+    bottom: auto;
+    top: 14%;
+    left: calc(var(--rail-l) + (100% - var(--rail-l) - var(--rail-r)) / 2);
+  }
+  .gol-wavebanner {
+    top: 6%;
+    left: calc(var(--rail-l) + (100% - var(--rail-l) - var(--rail-r)) / 2);
+    font-size: 42px;
+  }
+  .gol-arm {
+    top: auto;
+    bottom: 14%;
+    left: calc(var(--rail-l) + (100% - var(--rail-l) - var(--rail-r)) / 2);
+    &:hover { background: rgba(121, 224, 173, 0.16); }
+  }
+
+  .gol-tray {
+    top: 12px;
+    bottom: 64px;
+    left: auto;
+    right: 12px;
+    width: calc(var(--rail-r) - 20px);
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 0;
+    gap: 6px;
+  }
+  .gol-card {
+    flex: 1 1 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    max-width: none;
+    min-height: 52px;
+    padding: 6px 8px;
+    gap: 8px;
+    border-radius: 14px;
+    &-body {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      min-width: 0;
+      flex: 1;
+      gap: 1px;
+    }
+    &-key {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      border: 1px solid @glass-border;
+      background: rgba(0, 0, 0, 0.35);
+      font-size: 11px;
+      font-weight: 800;
+      color: @ink;
+    }
+    &-name {
+      min-height: 0;
+      font-size: 13px;
+      text-align: left;
+      justify-content: flex-start;
+      white-space: normal;
+    }
+    &-ico svg { width: 26px; height: 26px; }
+    &--sel { transform: translateX(-3px); }
+    &:hover:not(:disabled) {
+      border-color: @spectral;
+      transform: translateX(-4px);
+      background: linear-gradient(155deg, rgba(48, 72, 64, 0.96), rgba(20, 32, 34, 0.92));
+    }
+    &--poor:hover { filter: grayscale(0.4) brightness(0.85); }
+  }
+
+  .gol-speed {
+    top: auto;
+    right: 62px;
+    bottom: 12px;
+    width: calc(var(--rail-r) - 78px);
+    height: 42px;
+    border-radius: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    &:hover { border-color: @gold; }
+    kbd {
+      padding: 0 5px;
+      border-radius: 4px;
+      border: 1px solid rgba(0, 0, 0, 0.25);
+      background: rgba(0, 0, 0, 0.18);
+      font-family: @font;
+      font-size: 11px;
+      font-weight: 800;
+    }
+  }
+  .gol-mute {
+    right: 12px;
+    bottom: 12px;
+    &:hover { border-color: @spectral; }
+  }
+
+  .gol-logo { top: 7%; }
+  .gol-logo .wm { font-size: 64px; }
+  .gol-startguide {
+    bottom: 7%;
+    left: 50%;
+  }
+
+  .gol-choice-back {
+    align-items: center;
+    padding: 24px calc(var(--rail-r) + 16px) 24px calc(var(--rail-l) + 16px);
+  }
+  .gol-choice { width: min(820px, 100%); }
+  .gol-choice-row { align-items: stretch; }
+  .gol-offer {
+    min-height: 108px;
+    padding: 14px 12px;
+    &:hover {
+      border-color: @spectral;
+      background: rgba(121, 224, 173, 0.1);
+    }
+  }
+
+  .gol-overlay { padding: 16px 24px; }
+  .gol-card-over {
+    display: grid;
+    grid-template-columns: minmax(240px, 0.85fr) minmax(300px, 1.15fr);
+    column-gap: 22px;
+    row-gap: 6px;
+    align-items: start;
+    justify-items: stretch;
+    text-align: left;
+    max-width: min(980px, calc(100% - 16px));
+    padding: 16px 20px 14px;
+    .gol-kicker { grid-column: 1; grid-row: 1; margin: 0; }
+    .gol-overttl { grid-column: 1; grid-row: 2; margin: 0; font-size: 28px; text-align: left; }
+    .gol-fell { grid-column: 1; grid-row: 3; margin: 0; }
+    .gol-stats { grid-column: 1; grid-row: 4; }
+    .gol-shardline { grid-column: 1; grid-row: 5; margin: 0; }
+    .gol-newbest { grid-column: 1; grid-row: 6; margin: 0; }
+    .gol-next { grid-column: 2; grid-row: 1 / span 2; margin: 0; }
+    .gol-meta { grid-column: 2; grid-row: 3 / span 3; margin: 0; align-items: stretch; }
+    .gol-meta-note { grid-column: 2; grid-row: 6; margin: 0; }
+    .gol-btns {
+      grid-column: 1 / -1;
+      grid-row: 7;
+      flex-direction: row;
+      width: auto;
+      margin-top: 6px;
+    }
+  }
+  .gol-stat .v { font-size: 26px; }
+  .gol-btn:hover { filter: brightness(1.06); }
+  .gol-meta-btn:hover:not(:disabled) { border-color: @spectral; }
 }

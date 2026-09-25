@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -9,6 +9,7 @@ import {
 } from './lab';
 import { sfx } from './audio';
 import { damageMul, startingCash, startingLives } from './meta';
+import { LANE_FRAME, YARD_FRAME, type DeskRails } from './desk';
 
 // ─── Tuning ────────────────────────────────────────────────────────────────
 const START_CASH = 180;
@@ -260,6 +261,9 @@ interface Props {
   onGameOver: (score: number, wave: number) => void;
   registerRestart: (fn: () => void) => void;
   commands: MutableRefObject<GameCommands>;
+  /** Crazy Games landscape framing. Host and portrait guests leave this off. */
+  desk?: boolean;
+  rails?: DeskRails;
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -311,9 +315,22 @@ function drawHpBar(s: THREE.Sprite, frac: number) {
   (s as any).__tex.needsUpdate = true;
 }
 
+/** Pixel span of world-space XZ points under the current orthographic camera. */
+function projectSpan(cam: THREE.Camera, pts: [number, number][], w: number, h: number) {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [x, z] of pts) {
+    const q = new THREE.Vector3(x, 0.3, z).project(cam);
+    const px = (q.x + 1) / 2 * w;
+    const py = (1 - q.y) / 2 * h;
+    minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+    minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+  }
+  return { w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY), cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
+}
+
 // ─── The game world + loop ──────────────────────────────────────────────────
-function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onGameOver, registerRestart, commands }: Props) {
-  const { scene, camera, gl } = useThree();
+function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onGameOver, registerRestart, commands, desk = false, rails }: Props) {
+  const { scene, camera, gl, size } = useThree();
   const root = useMemo(() => new THREE.Group(), []);
   const fx = useMemo(() => new THREE.Group(), []);
 
@@ -367,15 +384,42 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
   const CAM_R = 16.8, CAM_H = 12, CAM_ZOOM = 58;
   const BASE_AZ = Math.atan2(9, 14.2);
   const azimuthRef = useRef(BASE_AZ);
+  const frameRef = useRef({ desk, mode, railL: rails?.left ?? 0, railR: rails?.right ?? 0, w: size.width, h: size.height });
+  frameRef.current = { desk, mode, railL: rails?.left ?? 0, railR: rails?.right ?? 0, w: size.width, h: size.height };
   const applyCam = useCallback(() => {
     const cam = camera as THREE.OrthographicCamera;
     const az = azimuthRef.current;
+    const { desk: framed, mode: frameMode, railL, railR, w, h } = frameRef.current;
     cam.position.set(CC.x + CAM_R * Math.sin(az), CAM_H, CC.z + CAM_R * Math.cos(az));
-    cam.zoom = CAM_ZOOM; cam.near = 0.1; cam.far = 200;
+    cam.near = 0.1; cam.far = 200;
     cam.lookAt(CC.x, 0.2, CC.z);
+    cam.updateMatrixWorld();
+    if (w > 0 && h > 0) {
+      cam.left = -w / 2; cam.right = w / 2; cam.top = h / 2; cam.bottom = -h / 2;
+    }
+    cam.clearViewOffset();
+    cam.zoom = CAM_ZOOM;
     cam.updateProjectionMatrix();
+    // Phone / portrait: fixed zoom. The host build always stays here.
+    // Landscape guest: scale the yard up until it fills the iframe, and while
+    // fighting slide it so the lane sits between the side rails.
+    if (framed && w > 0 && h > 0) {
+      const yardPx = projectSpan(cam, YARD_FRAME, w, h);
+      const pad = frameMode === 'play' ? 1.0 : 1.04;
+      cam.zoom = CAM_ZOOM * Math.min((w * pad) / yardPx.w, (h * pad) / yardPx.h);
+      cam.updateProjectionMatrix();
+      const focus = frameMode === 'play' ? LANE_FRAME : YARD_FRAME;
+      const box = projectSpan(cam, focus, w, h);
+      const playCx = frameMode === 'play' ? railL + (w - railL - railR) / 2 : w / 2;
+      const dx = box.cx - playCx;
+      const dy = box.cy - h / 2;
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        cam.setViewOffset(w, h, dx, dy, w, h);
+        cam.updateProjectionMatrix();
+      }
+    }
   }, [camera, CC]);
-  useEffect(() => { applyCam(); }, [applyCam]);
+  useLayoutEffect(() => { applyCam(); }, [applyCam, desk, mode, rails?.left, rails?.right, size.width, size.height]);
 
   // build the static board once
   useEffect(() => {
@@ -2085,7 +2129,7 @@ function Lights() {
 // At the heaviest crowd density, composition remains readable without bloom and
 // vignette. Those full-screen passes return automatically as the field clears;
 // this never changes player input, enemy behavior, or wave timing.
-function PerformanceEffects() {
+function PerformanceEffects({ desk }: { desk: boolean }) {
   const [reduced, setReduced] = useState(false);
   const previousTier = useRef(-1);
   useFrame(() => {
@@ -2098,7 +2142,9 @@ function PerformanceEffects() {
       {/* no mipmapBlur — it produces rainbow chroma noise in dark areas on mobile
           half-float buffers. Higher threshold keeps the dark ground out of bloom. */}
       <Bloom intensity={0.7} luminanceThreshold={0.62} luminanceSmoothing={0.25} />
-      <Vignette eskil={false} offset={0.2} darkness={0.62} />
+      {/* Landscape guest: a light edge so the side rails don't read as letterboxing.
+          Phone / host keeps the original heavier vignette. */}
+      <Vignette eskil={false} offset={desk ? 0.42 : 0.2} darkness={desk ? 0.38 : 0.62} />
     </EffectComposer>
   );
 }
@@ -2126,7 +2172,7 @@ export default function Scene(props: Props) {
     >
       <Lights />
       <World {...props} />
-      <PerformanceEffects />
+      <PerformanceEffects desk={!!props.desk} />
     </Canvas>
   );
 }

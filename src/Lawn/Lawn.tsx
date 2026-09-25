@@ -14,6 +14,7 @@ import {
   nextRankCost, nextUnlock, startingCash, startingLives,
   type MetaRanks, type RunAward,
 } from './meta';
+import { deskRails, isGuestDesk, type DeskRails } from './desk';
 import './Lawn.less';
 
 const POSTER_URL = 'https://yinxinghuan.github.io/games/posters/get-off-my-lawn.png';
@@ -68,6 +69,23 @@ function bossEta(wave: number) {
   return 3 - (wave % 3);
 }
 
+function useGuestDesk(): { desk: boolean; rails: DeskRails } {
+  const [box, setBox] = useState(() => ({
+    desk: isGuestDesk(),
+    rails: deskRails(typeof window !== 'undefined' ? window.innerWidth : 1280),
+  }));
+  useEffect(() => {
+    if (!isCrazyGamesBuild) return;
+    const onResize = () => setBox({
+      desk: isGuestDesk(),
+      rails: deskRails(window.innerWidth),
+    });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return box;
+}
+
 export function Lawn() {
   const [phase, setPhase] = useState<Phase>(
     typeof location !== 'undefined' && /debug|showcase/.test(location.search) ? 'playing' : 'attract',
@@ -94,6 +112,7 @@ export function Lawn() {
   const [selectedType, setSelectedType] = useState(0);
   const [champ, setChamp] = useState<LeaderboardEntry | null>(null);
   const [unlockToast, setUnlockToast] = useState<string | null>(null);
+  const { desk, rails } = useGuestDesk();
   const lastWave = useRef(0);
   const hintOnce = useRef(false);
   const commands = useRef<GameCommands>({ perk: null, start: false, upgrade: false, speed: 1 });
@@ -318,7 +337,10 @@ export function Lawn() {
   ));
 
   return (
-    <div className="gol">
+    <div
+      className={`gol${desk ? ' gol--desk' : ''}`}
+      style={desk ? { ['--rail-l' as string]: `${rails.left}px`, ['--rail-r' as string]: `${rails.right}px` } : undefined}
+    >
       <Scene
         mode={phase === 'playing' ? 'play' : phase === 'over' ? 'over' : 'attract'}
         selectedType={selectedType}
@@ -329,6 +351,8 @@ export function Lawn() {
         onGameOver={onGameOver}
         registerRestart={registerRestart}
         commands={commands}
+        desk={desk}
+        rails={rails}
       />
 
       {phase === 'playing' && (
@@ -392,7 +416,16 @@ export function Lawn() {
                   <span>{t('range')} {fmtStat(plate.range)}</span>
                   <span>{t('rate')} {fmtStat(plate.rate)}/s</span>
                 </>}
+              {desk && <span className="gol-plate-u"><kbd>U</kbd> {t('keyUpgrade')}</span>}
             </div>
+          )}
+          {desk && !choice && (
+            <>
+              <div className="gol-shards"><span className="gol-shards-n">{shards}</span><span className="gol-shards-k">{t('shards')}</span></div>
+              <div className="gol-deskkeys">
+                <span><kbd>Space</kbd> {t('keyStart')}</span>
+              </div>
+            </>
           )}
 
           <div className="gol-tray">
@@ -403,9 +436,12 @@ export function Lawn() {
               if (locked) {
                 return (
                   <button key={tw.id} className="gol-card gol-card--locked" disabled>
+                    <span className="gol-card-key">{i + 1}</span>
                     <span className="gol-card-ico"><Lock size={22} /></span>
-                    <span className="gol-card-name">{t(WEAPON_KEY[tw.id])}</span>
-                    <span className="gol-card-cost gol-card-unlock">{t('wave')} {tw.unlock}</span>
+                    <span className="gol-card-body">
+                      <span className="gol-card-name">{t(WEAPON_KEY[tw.id])}</span>
+                      <span className="gol-card-cost gol-card-unlock">{t('wave')} {tw.unlock}</span>
+                    </span>
                   </button>
                 );
               }
@@ -415,9 +451,12 @@ export function Lawn() {
                   className={`gol-card${i === selectedType ? ' gol-card--sel' : ''}${affordable ? '' : ' gol-card--poor'}`}
                   onPointerDown={(e) => { e.stopPropagation(); setSelectedType(i); }}
                 >
+                  <span className="gol-card-key">{i + 1}</span>
                   <span className="gol-card-ico"><Ico size={26} /></span>
-                  <span className="gol-card-name">{t(WEAPON_KEY[tw.id])}</span>
-                  <span className="gol-card-cost"><Skull size={13} /> {tw.cost}</span>
+                  <span className="gol-card-body">
+                    <span className="gol-card-name">{t(WEAPON_KEY[tw.id])}</span>
+                    <span className="gol-card-cost"><Skull size={13} /> {tw.cost}</span>
+                  </span>
                 </button>
               );
             })}
@@ -434,6 +473,7 @@ export function Lawn() {
             onPointerDown={(e) => { e.stopPropagation(); toggleSpeed(); }}
             aria-label={t('speedLabel')}
           >
+            {desk && <kbd>F</kbd>}
             {speed === 2 ? '2×' : '1×'}
           </button>
         </>

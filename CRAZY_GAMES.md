@@ -21,7 +21,16 @@ Crazy Games requires that guests can play and that the game does not add its own
 - Opens the leaderboard as a local note (“best score stays on this device”) instead of “Open in AlterU” / the App Store.
 - Does not treat Crazy Games query parameters as an Aigram session.
 
-The default `npm run build` path is unchanged for GitHub Pages and any AlterU/Aigram embed.
+The default `npm run build` path is unchanged for GitHub Pages and any AlterU/Aigram embed. Its layout stays the phone HUD (score on top, weapons along the bottom) at every window size.
+
+## Landscape iframe
+
+Crazy Games reviewers play in a landscape 16:9 iframe. On that guest build only, a wide viewport (`width > height`, at least 800×460) uses a desktop frame:
+
+- The orthographic camera zooms so the cemetery fills the iframe, and during a fight the lane sits between the side columns.
+- Lives, banished, night, boss countdown, shards, and souls sit in a left rail. Weapons stack in a right rail with keys `1–5`, `U` on the stat plate, `Space` on the rail, and `F` on the speed button. Hover states are on the weapon, perk, and rank buttons.
+- The night banner, the three perk cards, and the game-over card are laid out across the playfield.
+- A portrait guest iframe (and every host build) keeps the original phone layout. Resizing the window switches between the two.
 
 The Pages workflow publishes this guest build next to the root site, without replacing it:
 
