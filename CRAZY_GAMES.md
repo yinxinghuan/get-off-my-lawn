@@ -53,7 +53,11 @@ The Pages workflow publishes this guest build next to the root site, without rep
 
 https://yinxinghuan.github.io/get-off-my-lawn/crazygames/
 
-Progress sync through the Crazy Games SDK Data module is not wired up. Local best score is enough for this version. Grave shards, the furthest night, and the permanent ranks (candle, purse, edge) stay in the same on-device storage.
+Progress sync through the Crazy Games SDK Data module is not wired up. Local best score is enough for this version.
+
+## Audio
+
+The guest build plays CC0 music: a looping night bed, a looping boss bed, a title loop, a night-clear sting, and a game-over sting. Effects stay synthesized. Audio starts after the first pointer gesture. Mute and volume persist on this device, and music pauses while the tab is hidden. The AlterU build does not load these files. Sources and licences: `doc/cg-audio.md`. Grave shards, the furthest night, and the permanent ranks (candle, purse, edge) stay in the same on-device storage.
 
 ## Audio
 

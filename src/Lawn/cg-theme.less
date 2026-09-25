@@ -123,6 +123,11 @@
     letter-spacing: 0.02em;
     color: #f7f1e6;
   }
+  .gol-card-name {
+    word-break: normal;
+    overflow-wrap: normal;
+    hyphens: none;
+  }
   .gol-coming-line,
   .gol-offer > span:not(.gol-offer-key),
   .gol-plate span,
@@ -211,6 +216,52 @@
     color: @gold;
     border-radius: @s1;
     box-shadow: none;
+  }
+
+  .gol-vol {
+    position: absolute;
+    z-index: 12;
+    right: 12px;
+    bottom: 62px;
+    width: 120px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+    user-select: none;
+    &::-webkit-slider-runnable-track {
+      height: 6px;
+      background: @inkline;
+      border: 2px solid @gold;
+      border-radius: 999px;
+    }
+    &::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      margin-top: -6px;
+      border-radius: 50%;
+      background: @gold;
+      border: 2px solid @inkline;
+    }
+    &::-moz-range-track {
+      height: 6px;
+      background: @inkline;
+      border: 2px solid @gold;
+      border-radius: 999px;
+    }
+    &::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: @gold;
+      border: 2px solid @inkline;
+    }
   }
 
   .gol-speed:hover,
@@ -739,7 +790,7 @@
   .gol-tray {
     top: @s3;
     right: @s3;
-    bottom: 64px;
+    bottom: 74px;
     width: calc(var(--rail-r) - @s5);
     padding: @s2;
     gap: @s2;
@@ -749,17 +800,54 @@
   }
   .gol-speed {
     right: 60px;
-    bottom: @s3;
+    bottom: 28px;
     width: calc(var(--rail-r) - 72px);
     height: 40px;
     border-radius: @r;
   }
   .gol-mute {
     right: @s3;
-    bottom: @s3;
+    bottom: 28px;
     width: 40px;
     height: 40px;
     border-radius: @r;
+  }
+  .gol-card {
+    padding: 4px 6px;
+    gap: 4px;
+  }
+  .gol-card-key {
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+  }
+  .gol-card-ico {
+    width: 22px;
+    height: 22px;
+    flex-basis: 22px;
+    svg { width: 22px; height: 22px; }
+  }
+  .gol-card-name {
+    display: block;
+    font-size: 13px;
+    line-height: 1.15;
+    letter-spacing: 0;
+  }
+  @media (min-width: 1100px) {
+    .gol-card-name { font-size: 15px; }
+    .gol-card-ico {
+      width: 26px;
+      height: 26px;
+      flex-basis: 26px;
+      svg { width: 26px; height: 26px; }
+    }
+  }
+  // Thumb is 14px and draws past the input ends. Inset it inside the tray padding.
+  .gol-vol {
+    right: calc(@s3 + 10px);
+    bottom: 6px;
+    width: calc(var(--rail-r) - @s5 - 20px);
+    height: 18px;
   }
   .gol-toasts {
     top: @s3;

@@ -28,5 +28,5 @@ export function deskRails(width: number): DeskRails {
  */
 export function isGuestDesk(w = window.innerWidth, h = window.innerHeight): boolean {
   if (!isCrazyGamesBuild) return false;
-  return w > h && w >= 800 && h >= 460;
+  return w > h && w >= 800 && h >= 420;
 }
