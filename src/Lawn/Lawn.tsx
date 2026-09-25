@@ -424,14 +424,29 @@ export function Lawn() {
               {desk && <span className="gol-plate-u"><kbd>U</kbd> {t('keyUpgrade')}</span>}
             </div>
           )}
-          <div className="gol-rail-gap" />
-          {desk && !choice && (
-            <>
-              <div className="gol-shards"><span className={`gol-shards-n${shardPop ? ' gol-numpop' : ''}`} key={shardPop}>{shards}</span><span className="gol-shards-k">{t('shards')}</span></div>
-              <div className="gol-deskkeys">
-                <span><kbd>Space</kbd> {t('keyStart')}</span>
+          <div className="gol-rail-gap">
+            {desk && !choice && (
+              <div className="gol-coming">
+                <svg className="gol-coming-mark" viewBox="0 0 80 108" aria-hidden>
+                  <path d="M12 40C12 16 28 6 40 6s28 10 28 34v58H12V40z" fill="#1a0c28" stroke="#7cff6b" strokeWidth="4" />
+                  <path d="M34 52h12v28H34z" fill="#ffd15e" />
+                  <circle cx="40" cy="28" r="6" fill="#7ee7ff" />
+                </svg>
+                <div className="gol-coming-k">{preview && preview.lineup.length > 0 ? t('onThePath') : t('railWait')}</div>
+                {preview && preview.lineup.length > 0 && (
+                  <div className="gol-coming-line">{lineupText(preview.lineup)}</div>
+                )}
+                <div className={`gol-coming-boss${eta === 0 ? ' is-now' : ''}`}>
+                  {eta === 0 ? <b>{t('bossNow')}</b> : <><b>{eta}</b><span>{t('bossIn')}</span></>}
+                </div>
+                <div className="gol-shards"><span className={`gol-shards-n${shardPop ? ' gol-numpop' : ''}`} key={shardPop}>{shards}</span><span className="gol-shards-k">{t('shards')}</span></div>
               </div>
-            </>
+            )}
+          </div>
+          {desk && !choice && (
+            <div className="gol-deskkeys">
+              <span><kbd>Space</kbd> {t('keyStart')}</span>
+            </div>
           )}
           <div className={`gol-hud gol-souls${hud.cash >= sel.cost ? ' gol-souls--ready' : ''}`}>
             <Skull /> <span className={`gol-souls-n${cashPop ? ' gol-numpop' : ''}`} key={cashPop}>{hud.cash}</span> <span className="gol-souls-k">{t('souls')}</span>
@@ -451,11 +466,11 @@ export function Lawn() {
             <div className="gol-guide">
               <div className="gol-finger"><Finger /></div>
               {hud.cash >= sel.cost
-                ? <div className="gol-guide-txt"><b>{t('guideBuild')}</b><span>{t('guideBuildSub')}</span></div>
+                ? <div className="gol-guide-txt"><b>{desk ? t('clickBuild') : t('guideBuild')}</b><span>{desk ? t('clickBuildSub') : t('guideBuildSub')}</span></div>
                 : <div className="gol-guide-txt"><b>{t('guideEarn')}</b></div>}
             </div>
           )}
-          {upgradeHint && !choice && <div className="gol-hint">{t('tapUpgrade2')}</div>}
+          {upgradeHint && !choice && <div className="gol-hint">{desk ? t('clickUpgrade2') : t('tapUpgrade2')}</div>}
 
           <div className="gol-tray">
             {TOWER_TYPES.map((tw, i) => {
@@ -530,14 +545,22 @@ export function Lawn() {
 
       {choice && phase === 'playing' && (
         <div className="gol-choice-back">
-          <div className="gol-choice">
-            <div className="gol-choice-k">{t('wave')} {choice.wave} {t('nightClear')}</div>
+          <div className={`gol-choice${guest ? ' gol-choice--fanfare' : ''}`}>
+            {guest ? (
+              <div className="gol-fanfare">
+                <div className="gol-sparks" aria-hidden>{[0, 1, 2, 3, 4, 5, 6, 7].map((i) => <i key={i} />)}</div>
+                <div className="gol-fanfare-ribbon">{t('wave')} {choice.wave}</div>
+                <div className="gol-fanfare-title">{t('clearedBang')}</div>
+              </div>
+            ) : (
+              <div className="gol-choice-k">{t('wave')} {choice.wave} {t('nightClear')}</div>
+            )}
             <div className="gol-choice-stats">
               <span><b>{choice.kills}</b> {t('nightKills')}</span>
               <span><b>{choice.souls}</b> {t('nightSouls')}</span>
               <span><b>{choice.lives}</b> {t('nightCandles')}</span>
             </div>
-            <div className="gol-choice-h">{t('chooseOne')}</div>
+            <div className="gol-choice-h">{guest ? t('takePrize') : t('chooseOne')}</div>
             <div className="gol-choice-row">
               {offers.map((o, i) => (
                 <button key={o.id} className={`gol-offer gol-offer--${PERK_TONE[o.id] || 'common'}`} onPointerDown={(e) => { e.stopPropagation(); pickPerk(o.id); }}>
@@ -568,7 +591,7 @@ export function Lawn() {
               <span className="gol-tapcue-ring gol-tapcue-ring--late" />
               <div className="gol-finger"><Finger /></div>
             </div>
-            <div className="gol-start-cta">{t('tapToStart')}</div>
+            <div className="gol-start-cta">{desk ? t('clickToStart') : t('tapToStart')}</div>
             <div className="gol-keys">
               <span><kbd>1-5</kbd> {t('keyWeapons')}</span>
               <span><kbd>U</kbd> {t('keyUpgrade')}</span>

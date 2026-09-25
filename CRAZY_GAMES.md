@@ -43,6 +43,8 @@ The Crazy Games build adds the class `gol--cg` and restyles only that tree. The 
 - While placing, only the pad under the cursor draws a range ring. A built weapon's ring shows only while that pad is hovered.
 - Locked weapons keep their night label and wear a chain ornament instead of a flat grey wash.
 
+The guest panels are a cartoon graveyard HUD: thick black outlines, hard offset shadows, and toxic-green / ghost-cyan / pumpkin / gold on a purple night. The left column’s middle card shows who is on the path, the boss countdown, and shards. Desktop copy says “click” (and names the keys). Clearing a night opens a large “CLEARED!” fanfare before the loot cards. Portrait guests keep “tap” and the phone layout.
+
 The Pages workflow publishes this guest build next to the root site, without replacing it:
 
 https://yinxinghuan.github.io/get-off-my-lawn/crazygames/
