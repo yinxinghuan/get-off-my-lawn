@@ -32,6 +32,17 @@ Crazy Games reviewers play in a landscape 16:9 iframe. On that guest build only,
 - The night banner, the three perk cards, and the game-over card are laid out across the playfield.
 - A portrait guest iframe (and every host build) keeps the original phone layout. Resizing the window switches between the two.
 
+## Guest theme
+
+The Crazy Games build adds the class `gol--cg` and restyles only that tree. The host build never sets the class, so its glass HUD is unchanged.
+
+- Panels use a weathered stone gradient, an iron border, and a small inline noise texture. The attract call-to-action and the primary button are an old wood sign. No external image assets.
+- Titles and numbers use GraveMark, a locally bundled unmodified copy of Creepster (SIL OFL 1.1, reserved name Creepster, `src/Lawn/fonts/OFL.txt`). The CSS family name is GraveMark so the host Google Fonts link is untouched. Body copy stays Archivo.
+- Perk cards have a vector mark, a rarity stripe, hover lift, and keys `1` `2` `3` while the pick is open.
+- Souls, shards, and banished pop when the value changes. The night banner, perk modal, upgrade plate, and game-over card fade or rise in.
+- While placing, only the pad under the cursor draws a range ring. A built weapon's ring shows only while that pad is hovered.
+- Locked weapons keep their night label and wear a chain ornament instead of a flat grey wash.
+
 The Pages workflow publishes this guest build next to the root site, without replacing it:
 
 https://yinxinghuan.github.io/get-off-my-lawn/crazygames/

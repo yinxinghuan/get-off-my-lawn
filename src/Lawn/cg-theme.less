@@ -1,0 +1,287 @@
+// Crazy Games guest theme. Rules are scoped to .gol--cg, which the host build
+// never sets, so the AlterU layout and materials stay as they are.
+// Display face: Creepster (SIL OFL 1.1, Font Diner), the same lettering as the
+// yellow wordmark. Unmodified; CSS family name is GraveMark. See fonts/OFL.txt.
+
+@font-face {
+  font-family: 'GraveMark';
+  src: url('./fonts/Creepster-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@cg-display: 'GraveMark', 'Creepster', cursive;
+@cg-noise: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/></filter><rect width='64' height='64' filter='url(%23n)' opacity='0.45'/></svg>");
+
+.cg-stone() {
+  background-color: #2a312c;
+  background-image:
+    @cg-noise,
+    radial-gradient(120% 80% at 0% 0%, rgba(255, 236, 196, 0.16), transparent 46%),
+    linear-gradient(168deg, #5a6356 0%, #343b34 42%, #1c221e 100%);
+  background-blend-mode: overlay, normal, normal;
+  border: 1px solid #8a7d66;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 200, 0.35),
+    inset 0 0 0 1px rgba(42, 32, 18, 0.65),
+    inset 0 -10px 16px rgba(0, 0, 0, 0.28),
+    0 10px 22px rgba(0, 0, 0, 0.4);
+}
+
+.cg-wood() {
+  background-color: #5a341c;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.14) 0 2px, transparent 2px 8px),
+    linear-gradient(180deg, #a56b3a, #6b3e1c 58%, #3a2010);
+  border: 2px solid #2a160c;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 220, 170, 0.4),
+    0 3px 0 #1a0e08;
+  color: #f8e7c4;
+}
+
+@keyframes gol-numpop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.16); filter: drop-shadow(0 0 8px rgba(255, 209, 94, 0.85)); }
+  100% { transform: scale(1); filter: none; }
+}
+@keyframes gol-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.gol.gol--cg {
+  .gol-numpop { display: inline-block; animation: gol-numpop 0.38s ease; }
+
+  .gol-score-n,
+  .gol-souls-n,
+  .gol-shards-n,
+  .gol-card-cost,
+  .gol-stat .v,
+  .gol-overttl,
+  .gol-logo .wm,
+  .gol-wavebanner,
+  .gol-choice-k {
+    font-family: @cg-display;
+  }
+
+  .gol-souls,
+  .gol-shards,
+  .gol-plate,
+  .gol-card,
+  .gol-speed,
+  .gol-mute,
+  .gol-arm,
+  .gol-hint,
+  .gol-guide,
+  .gol-unlock {
+    .cg-stone();
+    border-radius: 12px;
+  }
+
+  .gol-score-k,
+  .gol-souls-k,
+  .gol-shards-k,
+  .gol-card-name,
+  .gol-choice-h,
+  .gol-next-k {
+    letter-spacing: 0.12em;
+  }
+
+  // Selected weapon: brass frame, not a flat green outline.
+  .gol-card {
+    position: relative;
+    transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+    &--sel {
+      border-color: @gold;
+      background-image:
+        linear-gradient(180deg, rgba(255, 209, 94, 0.22), transparent 46%),
+        @cg-noise,
+        linear-gradient(168deg, #5c5340, #2c2618);
+      box-shadow:
+        0 0 0 1px @gold,
+        inset 0 0 0 1px rgba(255, 209, 94, 0.35),
+        0 12px 22px rgba(0, 0, 0, 0.45);
+    }
+    &:hover:not(:disabled) { border-color: @gold; }
+    &:active:not(:disabled) { transform: translateY(1px) scale(0.98); }
+  }
+  .gol-card--locked {
+    filter: none;
+    opacity: 1;
+    cursor: default;
+    background-image:
+      @cg-noise,
+      linear-gradient(168deg, #3a342c, #16130f);
+    border-color: #6a5e50;
+    .gol-card-name { color: #d9cbb4; }
+    .gol-card-unlock {
+      font-family: @cg-display;
+      color: @gold !important;
+      letter-spacing: 0.06em;
+    }
+  }
+  .gol-card-chain {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 2;
+    opacity: 0.9;
+    filter: drop-shadow(0 1px 0 #1a1208);
+  }
+
+  .gol-speed:hover,
+  .gol-mute:hover,
+  .gol-btn:hover,
+  .gol-arm:hover { border-color: @gold; }
+  .gol-speed:active,
+  .gol-mute:active,
+  .gol-btn:active { transform: translateY(1px) scale(0.98); }
+
+  .gol-wavebanner {
+    isolation: isolate;
+    &::before {
+      content: '';
+      position: absolute;
+      z-index: -1;
+      inset: -8px -28px -6px;
+      border-radius: 12px;
+      .cg-stone();
+    }
+  }
+  .gol-plate,
+  .gol-choice,
+  .gol-card-over,
+  .gol-unlock {
+    animation: gol-rise 0.32s cubic-bezier(0.2, 1.1, 0.4, 1) both;
+  }
+
+  .gol-choice-back { animation: gol-fade 0.22s ease; }
+  .gol-choice { .cg-stone(); border-radius: 16px; }
+  .gol-offer {
+    position: relative;
+    min-height: 124px;
+    justify-content: flex-start;
+    overflow: hidden;
+    .cg-stone();
+    border-radius: 14px;
+    padding: 28px 12px 12px;
+    transition: transform 0.14s ease, border-color 0.14s ease;
+    animation: gol-rise 0.32s cubic-bezier(0.2, 1.1, 0.4, 1) both;
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 5px;
+      background: var(--tone, @spectral);
+    }
+    &:nth-child(2) { animation-delay: 0.05s; }
+    &:nth-child(3) { animation-delay: 0.1s; }
+    &:hover { transform: translateY(-4px); border-color: var(--tone, @gold); }
+    &:active { transform: translateY(1px) scale(0.98); }
+    b { font-size: 15px; }
+    > span:not(.gol-offer-key) { flex: 1; }
+  }
+  .gol-offer--common { --tone: #79e0ad; }
+  .gol-offer--rare { --tone: #8fe0ff; }
+  .gol-offer--epic { --tone: #ffd15e; }
+  .gol-offer--gold { --tone: #e8a23a; }
+  .gol-offer-key {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    min-width: 16px;
+    padding: 0 5px;
+    border-radius: 4px;
+    border: 1px solid #8a7d66;
+    background: rgba(0, 0, 0, 0.35);
+    font-size: 11px;
+    font-weight: 800;
+    text-align: center;
+  }
+  .gol-perk-ico { width: 32px; height: 32px; display: block; margin-bottom: 6px; }
+
+  .gol-card-over,
+  .gol-stat,
+  .gol-meta-btn,
+  .gol-next {
+    .cg-stone();
+  }
+  .gol-card-over { border-radius: 18px; }
+  .gol-stat { border-radius: 12px; }
+  .gol-btn--primary { .cg-wood(); border: none; }
+  .gol-btn--ghost { .cg-stone(); }
+
+  .gol-start-cta {
+    .cg-wood();
+    padding: 10px 18px;
+    border-radius: 8px;
+    text-shadow: none;
+    animation: gol-pulse 1.6s ease-in-out infinite;
+  }
+  .gol-keys kbd,
+  .gol-keystrip kbd,
+  .gol-deskkeys kbd,
+  .gol-plate-u kbd,
+  .gol-card-key {
+    background: #241c14;
+    border-color: #a08050;
+    color: @gold;
+  }
+}
+
+// Landscape column reads as one slab; inner bits are recessed, not extra pills.
+.gol.gol--cg.gol--desk {
+  .gol-rail {
+    .cg-stone();
+    border-radius: 16px;
+    border-width: 2px;
+    border-color: #6e624f;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 236, 200, 0.35),
+      inset 0 0 0 1px rgba(20, 14, 8, 0.7),
+      inset 0 -12px 18px rgba(0, 0, 0, 0.28),
+      0 12px 24px rgba(0, 0, 0, 0.45);
+  }
+  .gol-rail .gol-souls,
+  .gol-rail .gol-shards,
+  .gol-rail .gol-plate,
+  .gol-rail .gol-deskkeys {
+    background: rgba(8, 10, 8, 0.32);
+    background-image: none;
+    box-shadow: inset 0 0 0 1px rgba(255, 220, 170, 0.16);
+    border-color: transparent;
+    border-radius: 10px;
+  }
+  .gol-rail .gol-deskkeys { padding: 4px 8px; }
+  .gol-score-night,
+  .gol-score-boss {
+    background: rgba(8, 10, 8, 0.4);
+    border: 1px solid rgba(196, 164, 106, 0.45);
+    box-shadow: inset 0 1px 0 rgba(255, 236, 200, 0.18);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .gol-tray {
+    padding: 8px 6px;
+    border-radius: 16px;
+    background:
+      linear-gradient(180deg, rgba(28, 24, 20, 0.2), rgba(12, 10, 8, 0.35));
+    box-shadow:
+      inset 0 0 0 2px #3a332c,
+      inset 0 0 0 3px #8a7a62,
+      0 10px 22px rgba(0, 0, 0, 0.35);
+  }
+  .gol-card:hover:not(:disabled) {
+    transform: translateX(-4px);
+    border-color: @gold;
+    background-color: #2a312c;
+    background-image:
+      linear-gradient(180deg, rgba(255, 209, 94, 0.16), transparent 55%),
+      @cg-noise,
+      linear-gradient(168deg, #5a6356 0%, #343b34 42%, #1c221e 100%);
+  }
+  .gol-card:active:not(:disabled) { transform: translateX(-2px) scale(0.98); }
+  .gol-card--sel:hover { transform: translateX(-4px); }
+}

@@ -119,6 +119,57 @@ export function Finger({ size = 46 }: { size?: number }) {
   );
 }
 
+/** Guest-build perk marks. Vector only, same bone/gold palette as the rest of the set. */
+export function PerkMark({ id }: { id: string }) {
+  const common = (
+    <svg viewBox="0 0 32 32" className="gol-perk-ico" aria-hidden>
+      {id === 'sight' && (
+        <>
+          <path d="M2 16s5.2-8 14-8 14 8 14 8-5.2 8-14 8S2 16 2 16z" fill="none" stroke={C.bone} strokeWidth="2" />
+          <circle cx="16" cy="16" r="4" fill={C.wisp} />
+        </>
+      )}
+      {id === 'edge' && (
+        <path d="M6 26L22 6l4 2-12 18-4 2-4-2z" fill={C.bone} stroke={C.gold} strokeWidth="1.2" />
+      )}
+      {id === 'souls' && (
+        <>
+          <circle cx="16" cy="13" r="7" fill={C.bone} />
+          <circle cx="13.2" cy="12.4" r="1.5" fill={C.ink} />
+          <circle cx="18.8" cy="12.4" r="1.5" fill={C.ink} />
+          <path d="M12 20c1.2 2 2.6 3 4 3s2.8-1 4-3" fill={C.gold} />
+        </>
+      )}
+      {id === 'candle' && (
+        <>
+          <path d="M12 14h8v12a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2z" fill={C.bone} />
+          <path d="M16 4c1.6 2.2 2.4 3.6 2.4 5a2.4 2.4 0 0 1-4.8 0c0-1.4.8-2.8 2.4-5z" fill={C.gold} />
+        </>
+      )}
+      {id === 'tithe' && (
+        <>
+          <ellipse cx="16" cy="22" rx="8" ry="3.2" fill={C.boneD} />
+          <path d="M8 16c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2V12c0 1.8-3.6 3.2-8 3.2S8 13.8 8 12z" fill={C.gold} />
+          <ellipse cx="16" cy="12" rx="8" ry="3.2" fill={C.goldD} />
+        </>
+      )}
+      {(id === 'haste' || !['sight', 'edge', 'souls', 'candle', 'tithe'].includes(id)) && (
+        <path d="M14 4l-6 12h6l-2 12 12-14h-7z" fill={C.gold} stroke={C.bone} strokeWidth="1" />
+      )}
+    </svg>
+  );
+  return common;
+}
+
+export function Chain({ size = 18 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>
+      <path d="M8.2 10.2a3.2 3.2 0 0 1 5.4-2.3l1.2 1.2-1.6 1.6-1.2-1.2a1.1 1.1 0 0 0-1.6 1.6l1.2 1.2-1.6 1.6-1.2-1.2a3.2 3.2 0 0 1-.6-2.5z" fill="none" stroke={C.boneD} strokeWidth="1.7" />
+      <path d="M15.8 13.8a3.2 3.2 0 0 1-5.4 2.3l-1.2-1.2 1.6-1.6 1.2 1.2a1.1 1.1 0 0 0 1.6-1.6l-1.2-1.2 1.6-1.6 1.2 1.2a3.2 3.2 0 0 1 .6 2.5z" fill="none" stroke={C.goldD} strokeWidth="1.7" />
+    </svg>
+  );
+}
+
 export function Tomb({ size = 18 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} className="gol-ico" aria-hidden>

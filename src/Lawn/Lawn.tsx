@@ -7,7 +7,7 @@ import { Leaderboard, useGameScore } from '@shared/leaderboard';
 import type { LeaderboardEntry } from '@shared/leaderboard';
 import { useGameEvent, getTelegramId, isInAigramNow, isCrazyGamesBuild } from '@shared/runtime';
 import { unlockAudio, setMuted, isMuted, setMusic } from './audio';
-import { Candle, Skull, Sound, Tomb, Finger, Flame, Frost, Burst, Crown, Bolt, Venom, Lock } from './icons';
+import { Candle, Skull, Sound, Tomb, Finger, Flame, Frost, Burst, Crown, Bolt, Venom, Lock, PerkMark, Chain } from './icons';
 import { getLang, t, type StrKey } from './i18n';
 import {
   awardRun, buyRank, damageMul, getFurthest, getRanks, getShards, META_CAPS,
@@ -21,6 +21,9 @@ const POSTER_URL = 'https://yinxinghuan.github.io/games/posters/get-off-my-lawn.
 const TYPE_ICON = [Flame, Frost, Burst, Bolt, Venom]; // by TOWER_TYPES order
 const WEAPON_KEY: Record<string, StrKey> = {
   brazier: 'wFire', frost: 'wFrost', mortar: 'wBone', storm: 'wStorm', venom: 'wPlague',
+};
+const PERK_TONE: Record<string, string> = {
+  haste: 'common', sight: 'rare', edge: 'epic', souls: 'gold', candle: 'gold', tithe: 'rare',
 };
 const PERKS: { id: string; name: StrKey; desc: StrKey }[] = [
   { id: 'haste', name: 'perkHaste', desc: 'perkHasteD' },
@@ -69,6 +72,19 @@ function bossEta(wave: number) {
   return 3 - (wave % 3);
 }
 
+function usePop(value: number, enabled: boolean) {
+  const prev = useRef(value);
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (!enabled) { prev.current = value; return; }
+    if (prev.current !== value) {
+      prev.current = value;
+      setN((x) => x + 1);
+    }
+  }, [value, enabled]);
+  return n;
+}
+
 function useGuestDesk(): { desk: boolean; rails: DeskRails } {
   const [box, setBox] = useState(() => ({
     desk: isGuestDesk(),
@@ -113,6 +129,12 @@ export function Lawn() {
   const [champ, setChamp] = useState<LeaderboardEntry | null>(null);
   const [unlockToast, setUnlockToast] = useState<string | null>(null);
   const { desk, rails } = useGuestDesk();
+  const guest = isCrazyGamesBuild;
+  const cashPop = usePop(hud.cash, guest);
+  const scorePop = usePop(hud.score, guest);
+  const shardPop = usePop(shards, guest);
+  const offersRef = useRef(offers);
+  offersRef.current = offers;
   const lastWave = useRef(0);
   const hintOnce = useRef(false);
   const commands = useRef<GameCommands>({ perk: null, start: false, upgrade: false, speed: 1 });
@@ -295,7 +317,10 @@ export function Lawn() {
         commands.current.upgrade = true;
       } else if (k === 'f' || k === 'F') {
         toggleSpeed();
-      } else if (k >= '1' && k <= '5') {
+      } else if (guest && choice && k >= '1' && k <= '3') {
+        const offer = offersRef.current[Number(k) - 1];
+        if (offer) pickPerk(offer.id);
+      } else if (k >= '1' && k <= '5' && !choice) {
         const i = Number(k) - 1;
         const tw = TOWER_TYPES[i];
         if (tw && (hud.wave || 1) >= tw.unlock) setSelectedType(i);
@@ -338,7 +363,7 @@ export function Lawn() {
 
   return (
     <div
-      className={`gol${desk ? ' gol--desk' : ''}`}
+      className={`gol${guest ? ' gol--cg' : ''}${desk ? ' gol--desk' : ''}`}
       style={desk ? { ['--rail-l' as string]: `${rails.left}px`, ['--rail-r' as string]: `${rails.right}px` } : undefined}
     >
       <Scene
@@ -353,19 +378,18 @@ export function Lawn() {
         commands={commands}
         desk={desk}
         rails={rails}
+        guest={guest}
       />
 
       {phase === 'playing' && (
         <>
+          <div className="gol-rail">
           <div className="gol-hud gol-lives">
             {Array.from({ length: candleSlots }, (_, i) => <Candle key={i} lit={i < hud.lives} />)}
           </div>
-          <div className={`gol-hud gol-souls${hud.cash >= sel.cost ? ' gol-souls--ready' : ''}`}>
-            <Skull /> <span className="gol-souls-n">{hud.cash}</span> <span className="gol-souls-k">{t('souls')}</span>
-          </div>
           {champPill('gol-champ--play')}
           <div className="gol-hud gol-score">
-            <span className="gol-score-n">{hud.score}</span>
+            <span className={`gol-score-n${scorePop ? ' gol-numpop' : ''}`} key={scorePop}>{hud.score}</span>
             <span className="gol-score-k">{t('score')}</span>
             <span className="gol-score-row">
               <span className="gol-score-night"><b>{t('wave')}</b> {nightCount}</span>
@@ -379,6 +403,39 @@ export function Lawn() {
                 <div className="gol-bossbar-track"><div style={{ width: `${Math.round(hud.bossHp * 100)}%` }} /></div>
               </div>
             )}
+          </div>
+
+          {!choice && (
+            <div className="gol-plate" key={guest ? `${plate.mode}:${plate.typeId}:${plate.level}` : 'plate'}>
+              <b>{t(WEAPON_KEY[plate.typeId] || 'wFire')}</b>
+              {plate.mode === 'upgrade'
+                ? <>
+                  <span>{t('lv')} {plate.level}→{plate.level + 1}</span>
+                  <span>{t('dmg')} {fmtStat(plate.dmg)}→{fmtStat(plate.nextDmg)}</span>
+                  <span>{t('range')} {fmtStat(plate.range)}→{fmtStat(plate.nextRange)}</span>
+                  <span>{t('rate')} {fmtStat(plate.rate)}→{fmtStat(plate.nextRate)}</span>
+                  <span className="up"><Skull size={12} /> {plate.cost}</span>
+                </>
+                : <>
+                  <span>{t('dmg')} {fmtStat(plate.dmg)}</span>
+                  <span>{t('range')} {fmtStat(plate.range)}</span>
+                  <span>{t('rate')} {fmtStat(plate.rate)}/s</span>
+                </>}
+              {desk && <span className="gol-plate-u"><kbd>U</kbd> {t('keyUpgrade')}</span>}
+            </div>
+          )}
+          <div className="gol-rail-gap" />
+          {desk && !choice && (
+            <>
+              <div className="gol-shards"><span className={`gol-shards-n${shardPop ? ' gol-numpop' : ''}`} key={shardPop}>{shards}</span><span className="gol-shards-k">{t('shards')}</span></div>
+              <div className="gol-deskkeys">
+                <span><kbd>Space</kbd> {t('keyStart')}</span>
+              </div>
+            </>
+          )}
+          <div className={`gol-hud gol-souls${hud.cash >= sel.cost ? ' gol-souls--ready' : ''}`}>
+            <Skull /> <span className={`gol-souls-n${cashPop ? ' gol-numpop' : ''}`} key={cashPop}>{hud.cash}</span> <span className="gol-souls-k">{t('souls')}</span>
+          </div>
           </div>
 
           {hud.wave < 2 && !choice && (
@@ -400,34 +457,6 @@ export function Lawn() {
           )}
           {upgradeHint && !choice && <div className="gol-hint">{t('tapUpgrade2')}</div>}
 
-          {!choice && (
-            <div className="gol-plate">
-              <b>{t(WEAPON_KEY[plate.typeId] || 'wFire')}</b>
-              {plate.mode === 'upgrade'
-                ? <>
-                  <span>{t('lv')} {plate.level}→{plate.level + 1}</span>
-                  <span>{t('dmg')} {fmtStat(plate.dmg)}→{fmtStat(plate.nextDmg)}</span>
-                  <span>{t('range')} {fmtStat(plate.range)}→{fmtStat(plate.nextRange)}</span>
-                  <span>{t('rate')} {fmtStat(plate.rate)}→{fmtStat(plate.nextRate)}</span>
-                  <span className="up"><Skull size={12} /> {plate.cost}</span>
-                </>
-                : <>
-                  <span>{t('dmg')} {fmtStat(plate.dmg)}</span>
-                  <span>{t('range')} {fmtStat(plate.range)}</span>
-                  <span>{t('rate')} {fmtStat(plate.rate)}/s</span>
-                </>}
-              {desk && <span className="gol-plate-u"><kbd>U</kbd> {t('keyUpgrade')}</span>}
-            </div>
-          )}
-          {desk && !choice && (
-            <>
-              <div className="gol-shards"><span className="gol-shards-n">{shards}</span><span className="gol-shards-k">{t('shards')}</span></div>
-              <div className="gol-deskkeys">
-                <span><kbd>Space</kbd> {t('keyStart')}</span>
-              </div>
-            </>
-          )}
-
           <div className="gol-tray">
             {TOWER_TYPES.map((tw, i) => {
               const Ico = TYPE_ICON[i] || Flame;
@@ -437,6 +466,7 @@ export function Lawn() {
                 return (
                   <button key={tw.id} className="gol-card gol-card--locked" disabled>
                     <span className="gol-card-key">{i + 1}</span>
+                    {guest && <span className="gol-card-chain"><Chain /></span>}
                     <span className="gol-card-ico"><Lock size={22} /></span>
                     <span className="gol-card-body">
                       <span className="gol-card-name">{t(WEAPON_KEY[tw.id])}</span>
@@ -509,8 +539,10 @@ export function Lawn() {
             </div>
             <div className="gol-choice-h">{t('chooseOne')}</div>
             <div className="gol-choice-row">
-              {offers.map((o) => (
-                <button key={o.id} className="gol-offer" onPointerDown={(e) => { e.stopPropagation(); pickPerk(o.id); }}>
+              {offers.map((o, i) => (
+                <button key={o.id} className={`gol-offer gol-offer--${PERK_TONE[o.id] || 'common'}`} onPointerDown={(e) => { e.stopPropagation(); pickPerk(o.id); }}>
+                  {guest && <span className="gol-offer-key">{i + 1}</span>}
+                  {guest && <PerkMark id={o.id} />}
                   <b>{t(o.name)}</b>
                   <span>{t(o.desc)}</span>
                 </button>

@@ -264,6 +264,8 @@ interface Props {
   /** Crazy Games landscape framing. Host and portrait guests leave this off. */
   desk?: boolean;
   rails?: DeskRails;
+  /** Crazy Games guest build. Host leaves this off so placement rings stay as they are. */
+  guest?: boolean;
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -329,7 +331,7 @@ function projectSpan(cam: THREE.Camera, pts: [number, number][], w: number, h: n
 }
 
 // ─── The game world + loop ──────────────────────────────────────────────────
-function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onGameOver, registerRestart, commands, desk = false, rails }: Props) {
+function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onGameOver, registerRestart, commands, desk = false, rails, guest = false }: Props) {
   const { scene, camera, gl, size } = useThree();
   const root = useMemo(() => new THREE.Group(), []);
   const fx = useMemo(() => new THREE.Group(), []);
@@ -386,6 +388,8 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
   const azimuthRef = useRef(BASE_AZ);
   const frameRef = useRef({ desk, mode, railL: rails?.left ?? 0, railR: rails?.right ?? 0, w: size.width, h: size.height });
   frameRef.current = { desk, mode, railL: rails?.left ?? 0, railR: rails?.right ?? 0, w: size.width, h: size.height };
+  const guestRef = useRef(guest);
+  guestRef.current = guest;
   const applyCam = useCallback(() => {
     const cam = camera as THREE.OrthographicCamera;
     const az = azimuthRef.current;
@@ -615,11 +619,14 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
         // dim when you can't yet pay — so "when you can build" reads at a glance.
         // Empty live sockets also draw the selected weapon's range.
         const placeRange = projectStats(st.selectedType, 1, st.mods || IDENTITY_MODS).range;
-        if (st.plots.length && Math.abs((st.shownRange ?? -1) - placeRange) > 0.02) {
-          st.shownRange = placeRange;
+        const guestNow = guestRef.current;
+        const rangeSig = placeRange + (guestNow ? 0.001 : 0);
+        if (st.plots.length && Math.abs((st.shownRange ?? -1) - rangeSig) > 0.02) {
+          st.shownRange = rangeSig;
+          const band = guestNow ? 0.045 : 0.08;
           for (const p of st.plots) {
             p.rangeDisc.geometry.dispose();
-            p.rangeDisc.geometry = new THREE.RingGeometry(Math.max(0.2, placeRange - 0.08), placeRange, 42);
+            p.rangeDisc.geometry = new THREE.RingGeometry(Math.max(0.2, placeRange - band), placeRange, guestNow ? 72 : 42);
           }
         }
         for (const p of st.plots) {
@@ -637,12 +644,19 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
           }
           const aff = st.cash >= TOWER_TYPES[st.selectedType].cost;
           p.marker.visible = true;
-          const showRange = mode === 'play' && st.hold !== 'showcase';
+          // Guest: one gold ring, on the pad under the cursor. Host: every empty socket.
+          const showRange = mode === 'play' && st.hold !== 'showcase' && (!guestNow || st.hoverPlot === p);
           p.rangeDisc.visible = showRange;
           if (showRange) {
             const rmR = p.rangeDisc.material as THREE.MeshBasicMaterial;
-            rmR.color.setHex(TOWER_TYPES[st.selectedType].color);
-            rmR.opacity = st.hoverPlot === p ? 0.62 : 0.34;
+            if (guestNow) {
+              rmR.color.setHex(0xffd15e);
+              rmR.opacity = 0.92;
+              p.rangeDisc.rotation.z += dt * 0.4;
+            } else {
+              rmR.color.setHex(TOWER_TYPES[st.selectedType].color);
+              rmR.opacity = st.hoverPlot === p ? 0.62 : 0.34;
+            }
           }
           const rm = p.ring.material as THREE.MeshBasicMaterial;
           if (aff) {
@@ -843,7 +857,17 @@ function World({ mode, selectedType, onHud, onWave, onNightClear, onInspect, onG
           // as "needs more souls", never as a broken/locked tower).
           const notMax = !isAttract && tw.level < TOWER_MAX_LVL;
           const ringMat = tw.ring.material as THREE.MeshBasicMaterial;
-          ringMat.opacity = !isAttract && st.hoverTower === tw ? 0.55 : 0.16;
+          if (guestRef.current) {
+            const hot = !isAttract && st.hoverTower === tw;
+            tw.ring.visible = hot;
+            if (hot) {
+              ringMat.opacity = 0.9;
+              ringMat.color.setHex(0xffd15e);
+            }
+          } else {
+            tw.ring.visible = true;
+            ringMat.opacity = !isAttract && st.hoverTower === tw ? 0.55 : 0.16;
+          }
           tw.upArrow.visible = notMax;
           if (notMax) {
             const afford = st.cash >= UPGRADE_COST(tw.level);

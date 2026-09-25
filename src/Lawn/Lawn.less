@@ -27,6 +27,8 @@
 
   // ── HUD ────────────────────────────────────────────────────────────────
   &-hud { position: absolute; pointer-events: none; z-index: 5; }
+  &-rail { display: contents; }
+  &-rail-gap { display: none; }
 
   &-lives {
     top: calc(env(safe-area-inset-top) + 14px);
@@ -1185,4 +1187,38 @@
   .gol-stat .v { font-size: 26px; }
   .gol-btn:hover { filter: brightness(1.06); }
   .gol-meta-btn:hover:not(:disabled) { border-color: @spectral; }
+
+  // One stone column instead of scattered absolute pills.
+  .gol-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    position: absolute;
+    z-index: 6;
+    top: 10px;
+    left: 10px;
+    bottom: 10px;
+    width: calc(var(--rail-l) - 18px);
+    gap: 8px;
+    padding: 10px 8px 8px;
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+  .gol-rail-gap { display: block; flex: 1 1 auto; min-height: 6px; }
+  .gol-rail > .gol-lives,
+  .gol-rail > .gol-score,
+  .gol-rail > .gol-plate,
+  .gol-rail > .gol-shards,
+  .gol-rail > .gol-deskkeys,
+  .gol-rail > .gol-souls {
+    position: relative;
+    top: auto;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    transform: none;
+    width: auto;
+  }
 }
+
+@import './cg-theme.less';
